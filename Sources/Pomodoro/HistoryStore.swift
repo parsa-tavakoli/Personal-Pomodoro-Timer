@@ -30,6 +30,13 @@ final class HistoryStore: ObservableObject {
         save()
     }
 
+    func rename(_ id: UUID, to name: String) {
+        guard let i = records.firstIndex(where: { $0.id == id }) else { return }
+        // Names are single-line (e.g. pasted text); spaces are kept so typing between words works.
+        records[i].name = name.filter { !$0.isNewline }
+        save()
+    }
+
     /// Total focus seconds for sessions started on or after `date`.
     func focusSeconds(since date: Date) -> TimeInterval {
         records.filter { $0.startedAt >= date }.reduce(0) { $0 + $1.focusSeconds }

@@ -23,6 +23,8 @@ final class SessionTimer: ObservableObject {
     /// Flexible mode: a finished countdown keeps counting up until you choose what's next.
     @Published private(set) var isInOvertime = false
     @Published private(set) var overtime: TimeInterval = 0
+    /// Optional name for the big session; editable before and during it.
+    @Published var sessionName = ""
 
     private let history: HistoryStore
     private var endDate: Date?
@@ -33,10 +35,13 @@ final class SessionTimer: ObservableObject {
     /// Countdown time used before overtime began (less than the full block if skipped).
     private var countdownElapsed: TimeInterval = 0
 
+    private let notificationDelegate = NotificationDelegate()
+
     init(history: HistoryStore) {
         self.history = history
         self.config = Self.loadConfig()
         reset()
+        if canNotify { UNUserNotificationCenter.current().delegate = notificationDelegate }
     }
 
     // MARK: - Derived
@@ -233,9 +238,12 @@ final class SessionTimer: ObservableObject {
                 config: sessionConfig,
                 completedPomodoros: completedPomodoros,
                 focusSeconds: focusSeconds,
-                finished: finished
+                finished: finished,
+                name: sessionName.trimmingCharacters(in: .whitespacesAndNewlines)
             ))
         }
+        // Cleared here, not in reset(): start() resets, and must keep a name typed beforehand.
+        sessionName = ""
         reset()
     }
 
@@ -272,6 +280,8 @@ final class SessionTimer: ObservableObject {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
+        let name = sessionName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { content.subtitle = name }
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
@@ -295,5 +305,16 @@ final class SessionTimer: ObservableObject {
         if let data = try? JSONEncoder().encode(config) {
             UserDefaults.standard.set(data, forKey: configKey)
         }
+    }
+}
+
+/// Shows banners even while Pomodoro is the frontmost app (macOS hides them by default).
+private final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list])
     }
 }

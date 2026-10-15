@@ -78,7 +78,8 @@ struct MenuBarMenu: View {
 
     var body: some View {
         if let block = timer.currentBlock, timer.state != .idle {
-            Text("\(block.kind.rawValue)\(timer.isInOvertime ? " · Overtime" : "") · \(timer.progressText)")
+            let name = timer.sessionName.trimmingCharacters(in: .whitespacesAndNewlines)
+            Text("\(name.isEmpty ? "" : name + " · ")\(block.kind.rawValue)\(timer.isInOvertime ? " · Overtime" : "") · \(timer.progressText)")
             Divider()
         }
         Button(timer.state == .running ? "Pause" : (timer.state == .paused ? "Resume" : "Start Session")) {

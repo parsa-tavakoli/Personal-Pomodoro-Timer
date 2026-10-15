@@ -88,4 +88,24 @@ struct SessionRecord: Codable, Identifiable {
     let completedPomodoros: Int
     let focusSeconds: TimeInterval
     let finished: Bool
+    /// Name of the big session; empty when you didn't give one.
+    var name: String = ""
+
+    var displayName: String { name.isEmpty ? "Untitled session" : name }
+}
+
+// In an extension so the memberwise initializer is kept.
+extension SessionRecord {
+    // `name` may be missing in history saved by older versions.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        startedAt = try c.decode(Date.self, forKey: .startedAt)
+        endedAt = try c.decode(Date.self, forKey: .endedAt)
+        config = try c.decode(SessionConfig.self, forKey: .config)
+        completedPomodoros = try c.decode(Int.self, forKey: .completedPomodoros)
+        focusSeconds = try c.decode(TimeInterval.self, forKey: .focusSeconds)
+        finished = try c.decode(Bool.self, forKey: .finished)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+    }
 }

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct TimerView: View {
@@ -12,6 +13,10 @@ struct TimerView: View {
 
     var body: some View {
         VStack(spacing: 20) {
+            SessionNameField(text: $timer.sessionName, placeholder: "Name this session")
+                .font(.title3.weight(.medium))
+                .multilineTextAlignment(.center)
+
             Text(title)
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(tint)
@@ -145,5 +150,18 @@ private struct SessionProgress: View {
         if done { return .red }
         if n == current.pomodoro && timer.state != .idle { return .red.opacity(0.45) }
         return .secondary.opacity(0.3)
+    }
+}
+
+/// Plain inline text field for a session name. Return ends editing so the
+/// keyboard goes back to the timer shortcuts.
+struct SessionNameField: View {
+    @Binding var text: String
+    let placeholder: String
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.plain)
+            .onSubmit { NSApp.keyWindow?.makeFirstResponder(nil) }
     }
 }

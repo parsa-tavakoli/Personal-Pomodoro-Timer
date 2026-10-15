@@ -50,7 +50,12 @@ private struct StatTile: View {
 }
 
 private struct HistoryRow: View {
+    @EnvironmentObject private var history: HistoryStore
     let record: SessionRecord
+
+    private var name: Binding<String> {
+        Binding(get: { record.name }, set: { history.rename(record.id, to: $0) })
+    }
 
     private var pomodoros: String {
         let n = record.completedPomodoros
@@ -62,8 +67,9 @@ private struct HistoryRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(record.startedAt.formatted(date: .abbreviated, time: .shortened))
-                Text("\(pomodoros) · \(formatDuration(record.focusSeconds)) focus")
+                SessionNameField(text: name, placeholder: "Untitled session")
+                    .help("Click to rename")
+                Text("\(record.startedAt.formatted(date: .abbreviated, time: .shortened)) · \(pomodoros) · \(formatDuration(record.focusSeconds)) focus")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
