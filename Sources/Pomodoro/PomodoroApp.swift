@@ -40,8 +40,15 @@ struct ContentView: View {
     enum Page: String, CaseIterable {
         case timer = "Timer"
         case history = "History"
+        case stats = "Stats"
 
-        var symbol: String { self == .timer ? "timer" : "clock.arrow.circlepath" }
+        var symbol: String {
+            switch self {
+            case .timer: return "timer"
+            case .history: return "clock.arrow.circlepath"
+            case .stats: return "chart.bar.xaxis"
+            }
+        }
     }
 
     @AppStorage("selectedPage") private var page: Page = .timer
@@ -51,6 +58,7 @@ struct ContentView: View {
             switch page {
             case .timer: TimerView()
             case .history: HistoryView()
+            case .stats: StatsView()
             }
         }
         .padding()
