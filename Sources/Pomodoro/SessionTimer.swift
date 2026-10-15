@@ -18,6 +18,11 @@ final class SessionTimer: ObservableObject {
     @Published private(set) var index = 0
     @Published private(set) var remaining: TimeInterval = 0
     @Published private(set) var state: State = .idle
+    /// Config snapshot for the running session, so edits in Settings apply to the next one.
+    @Published private(set) var sessionConfig = SessionConfig()
+    /// Flexible mode: a finished countdown keeps counting up until you choose what's next.
+    @Published private(set) var isInOvertime = false
+    @Published private(set) var overtime: TimeInterval = 0
 
     private let history: HistoryStore
     private var endDate: Date?
@@ -25,6 +30,8 @@ final class SessionTimer: ObservableObject {
     private var sessionStart: Date?
     private var focusSeconds: TimeInterval = 0
     private var completedPomodoros = 0
+    /// Countdown time used before overtime began (less than the full block if skipped).
+    private var countdownElapsed: TimeInterval = 0
 
     init(history: HistoryStore) {
         self.history = history
@@ -36,13 +43,28 @@ final class SessionTimer: ObservableObject {
 
     var currentBlock: Block? { blocks.indices.contains(index) ? blocks[index] : nil }
 
+    var isFlexible: Bool { sessionConfig.mode == .flexible }
+
     /// 0…1 progress through the current block.
     var blockProgress: Double {
+        if isInOvertime { return 1 }
         guard let block = currentBlock, block.duration > 0 else { return 0 }
         return 1 - remaining / block.duration
     }
 
-    var remainingText: String { Self.format(remaining) }
+    var remainingText: String {
+        isInOvertime ? "+" + Self.format(overtime) : Self.format(remaining)
+    }
+
+    /// Number of pomodoros in the session so far (flexible) or in total (fixed).
+    var pomodoroCount: Int {
+        isFlexible ? (currentBlock?.pomodoro ?? 1) : sessionConfig.totalPomodoros
+    }
+
+    var progressText: String {
+        let n = currentBlock?.pomodoro ?? 1
+        return isFlexible ? "Pomodoro \(n)" : "Pomodoro \(n) of \(sessionConfig.totalPomodoros)"
+    }
 
     var menuBarText: String {
         switch state {
@@ -63,7 +85,7 @@ final class SessionTimer: ObservableObject {
     }
 
     func pause() {
-        guard state == .running else { return }
+        guard state == .running, !isInOvertime else { return }
         tick()
         state = .paused
         endDate = nil
@@ -83,16 +105,51 @@ final class SessionTimer: ObservableObject {
         }
     }
 
-    /// Ends the current block early and moves to the next one.
+    /// Ends the current block early. Fixed: moves to the next block.
+    /// Flexible: jumps straight to overtime, where you choose what's next.
     func skip() {
-        guard state != .idle else { return }
-        advance(completedNaturally: false)
+        guard state != .idle, !isInOvertime else { return }
+        if isFlexible {
+            if state == .paused { state = .running; startTicker() }
+            endDate = Date()
+            enterOvertime()
+        } else {
+            advance(completedNaturally: false)
+        }
     }
 
-    /// Ends the whole session early and saves what was done.
+    /// Flexible: after a pomodoro's overtime, take a short or long break.
+    func continueWithBreak(_ kind: Block.Kind) {
+        guard isInOvertime, let block = currentBlock, block.kind == .focus, kind != .focus else { return }
+        tick()
+        focusSeconds += countdownElapsed + overtime
+        completedPomodoros += 1
+        blocks.append(Block(kind: kind, duration: sessionConfig.duration(of: kind), pomodoro: block.pomodoro))
+        index += 1
+        beginCurrentBlock()
+    }
+
+    /// Flexible: after a break's overtime, start the next pomodoro.
+    func startNextPomodoro() {
+        guard isInOvertime, let block = currentBlock, block.kind != .focus else { return }
+        blocks.append(Block(kind: .focus, duration: sessionConfig.duration(of: .focus), pomodoro: block.pomodoro + 1))
+        index += 1
+        beginCurrentBlock()
+    }
+
+    /// Ends the whole session and saves what was done.
     func stop() {
         guard state != .idle else { return }
         if state == .running { tick() }
+        if isInOvertime {
+            // Flexible: the countdown already ran out, so this is a normal ending.
+            if currentBlock?.kind == .focus {
+                focusSeconds += countdownElapsed + overtime
+                completedPomodoros += 1
+            }
+            finish(finished: true)
+            return
+        }
         if currentBlock?.kind == .focus, let block = currentBlock {
             focusSeconds += block.duration - remaining
         }
@@ -104,6 +161,10 @@ final class SessionTimer: ObservableObject {
     private func run() {
         state = .running
         endDate = Date().addingTimeInterval(remaining)
+        startTicker()
+    }
+
+    private func startTicker() {
         ticker?.invalidate()
         let t = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
@@ -115,8 +176,36 @@ final class SessionTimer: ObservableObject {
     private func tick() {
         guard state == .running, let endDate else { return }
         // Computed from the end date so it stays accurate across sleep.
-        remaining = max(0, endDate.timeIntervalSinceNow.rounded(.up))
-        if remaining <= 0 { advance(completedNaturally: true) }
+        let left = endDate.timeIntervalSinceNow
+        if isInOvertime {
+            overtime = max(0, (-left).rounded(.down))
+            return
+        }
+        remaining = max(0, left.rounded(.up))
+        guard remaining <= 0 else { return }
+        if isFlexible { enterOvertime() } else { advance(completedNaturally: true) }
+    }
+
+    /// Countdown is over; keep counting up from `endDate` until the user decides.
+    private func enterOvertime() {
+        guard let block = currentBlock else { return }
+        countdownElapsed = block.duration - remaining
+        remaining = 0
+        overtime = 0
+        isInOvertime = true
+        if block.kind == .focus {
+            notify(title: "Pomodoro \(block.pomodoro) done 🍅", body: "Take a short or long break when you're ready.")
+        } else {
+            notify(title: "Break over ☕️", body: "Start the next pomodoro when you're ready.")
+        }
+    }
+
+    private func beginCurrentBlock() {
+        isInOvertime = false
+        overtime = 0
+        countdownElapsed = 0
+        remaining = currentBlock?.duration ?? 0
+        endDate = Date().addingTimeInterval(remaining)
     }
 
     private func advance(completedNaturally: Bool) {
@@ -146,7 +235,7 @@ final class SessionTimer: ObservableObject {
             history.add(SessionRecord(
                 startedAt: sessionStart,
                 endedAt: Date(),
-                config: config,
+                config: sessionConfig,
                 completedPomodoros: completedPomodoros,
                 focusSeconds: focusSeconds,
                 finished: finished
@@ -163,6 +252,10 @@ final class SessionTimer: ObservableObject {
         sessionStart = nil
         focusSeconds = 0
         completedPomodoros = 0
+        isInOvertime = false
+        overtime = 0
+        countdownElapsed = 0
+        sessionConfig = config
         blocks = Session.blocks(for: config)
         index = 0
         remaining = blocks.first?.duration ?? 0

@@ -55,14 +55,15 @@ struct MenuBarMenu: View {
 
     var body: some View {
         if let block = timer.currentBlock, timer.state != .idle {
-            Text("\(block.kind.rawValue) · Pomodoro \(block.pomodoro)/\(timer.config.totalPomodoros)")
+            Text("\(block.kind.rawValue)\(timer.isInOvertime ? " · Overtime" : "") · \(timer.progressText)")
             Divider()
         }
         Button(timer.state == .running ? "Pause" : (timer.state == .paused ? "Resume" : "Start Session")) {
             timer.toggle()
         }
+        .disabled(timer.isInOvertime)
         Button("Skip Block") { timer.skip() }
-            .disabled(timer.state == .idle)
+            .disabled(timer.state == .idle || timer.isInOvertime)
         Button("Stop Session") { timer.stop() }
             .disabled(timer.state == .idle)
         Divider()

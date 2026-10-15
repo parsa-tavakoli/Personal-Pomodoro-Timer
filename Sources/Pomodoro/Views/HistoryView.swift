@@ -50,11 +50,18 @@ private struct StatTile: View {
 private struct HistoryRow: View {
     let record: SessionRecord
 
+    private var pomodoros: String {
+        let n = record.completedPomodoros
+        return record.config.mode == .flexible
+            ? "\(n) pomodoro\(n == 1 ? "" : "s")"
+            : "\(n)/\(record.config.totalPomodoros) pomodoros"
+    }
+
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.startedAt.formatted(date: .abbreviated, time: .shortened))
-                Text("\(record.completedPomodoros)/\(record.config.totalPomodoros) pomodoros · \(formatDuration(record.focusSeconds)) focus")
+                Text("\(pomodoros) · \(formatDuration(record.focusSeconds)) focus")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
