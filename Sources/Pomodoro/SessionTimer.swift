@@ -66,13 +66,8 @@ final class SessionTimer: ObservableObject {
         return isFlexible ? "Pomodoro \(n)" : "Pomodoro \(n) of \(sessionConfig.totalPomodoros)"
     }
 
-    var menuBarText: String {
-        switch state {
-        case .idle: return "🍅"
-        case .running: return "\(currentBlock?.kind == .focus ? "🍅" : "☕️") \(remainingText)"
-        case .paused: return "⏸ \(remainingText)"
-        }
-    }
+    /// Menu bar shows only the time, no icons.
+    var menuBarText: String { remainingText }
 
     // MARK: - Controls
 
