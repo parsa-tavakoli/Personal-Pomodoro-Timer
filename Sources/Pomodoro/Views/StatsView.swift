@@ -1,14 +1,18 @@
 import Charts
 import SwiftUI
 
-/// Daily focus chart plus totals per session name. All content, so no glass here.
+/// Weekly stats (design spec, screen D). Content is flat; only the range toggle is glass.
 struct StatsView: View {
     enum Range: Int, CaseIterable {
         case week = 7
         case month = 30
 
-        var title: String { "\(rawValue) days" }
+        var title: String { self == .week ? "Week" : "Month" }
     }
+
+    /// Daily pomodoro goal shown on the chart. Fixed for now.
+    static let goal = 8
+    private static let hours = 8..<18
 
     @EnvironmentObject private var history: HistoryStore
     // @AppStorage rather than @State (no SwiftUI macro plugin with the Command Line Tools).
@@ -21,124 +25,237 @@ struct StatsView: View {
         let names = Stats.byName(history.records, since: since)
         // Ignore a remembered name that has no sessions in this range.
         let active = names.first { $0.key == selectedKey }
+        let records = Stats.records(history.records, since: since, nameKey: active?.key)
 
-        VStack(alignment: .leading, spacing: 12) {
-            Picker("Range", selection: $range) {
-                ForEach(Range.allCases, id: \.self) { Text($0.title).tag($0) }
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            HStack {
+                Text("Stats")
+                    .font(Theme.Fonts.screenTitle)
+                Spacer()
+                Picker("Range", selection: $range) {
+                    ForEach(Range.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                // Spec: neutral selected segment rather than the system blue.
+                .tint(Theme.Palette.inactive)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
 
             if names.isEmpty {
-                ContentUnavailableView("No sessions yet", systemImage: "chart.bar",
-                                       description: Text("Focus time from the last \(range.rawValue) days shows up here."))
-                    .frame(maxHeight: .infinity)
+                Text("No sessions in the last \(range.rawValue) days")
+                    .font(Theme.Fonts.body(13))
+                    .foregroundStyle(Theme.Palette.textMuted)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                chart(Stats.daily(history.records, days: days, nameKey: active?.key))
-                summary(Stats.records(history.records, since: since, nameKey: active?.key), active: active)
-                nameList(names)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Theme.Space.s) {
+                        kpis(records)
+                        if let active {
+                            filterBanner(active)
+                        }
+                        card("Pomodoros per day") {
+                            chart(Stats.daily(history.records, days: days, nameKey: active?.key))
+                        }
+                        card("Most focused hours") {
+                            hoursRow(Stats.startsByHour(history.records, since: since,
+                                                        nameKey: active?.key, hours: Self.hours))
+                        }
+                        card("By task") {
+                            nameList(names)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    // MARK: - KPI tiles
+
+    private func kpis(_ records: [SessionRecord]) -> some View {
+        let focus = records.reduce(0) { $0 + $1.focusSeconds }
+        let streak = Stats.streak(history.records)
+        return HStack(spacing: Theme.Space.s) {
+            KPITile(label: "Focus time", value: formatDuration(focus))
+            KPITile(label: "Sessions", value: "\(records.count)")
+            KPITile(label: "Streak", value: "\(streak) day\(streak == 1 ? "" : "s")")
+        }
+    }
+
+    private func filterBanner(_ active: NameTotal) -> some View {
+        HStack {
+            Circle().fill(Theme.Palette.accent).frame(width: 8, height: 8)
+            Text("Showing \(active.displayName)")
+                .lineLimit(1)
+            Spacer()
+            Button("Show all") { selectedKey = "" }
+                .buttonStyle(.link)
+                .tint(Theme.Palette.accent)
+        }
+        .font(Theme.Fonts.body(12))
+    }
+
+    // MARK: - Cards
+
+    private func card<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Space.m) {
+            Text(title)
+                .font(Theme.Fonts.body(13, .semibold))
+            content()
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card(radius: Theme.Radius.card)
     }
 
     private func chart(_ daily: [DayTotal]) -> some View {
-        Chart(daily) { day in
-            BarMark(
-                x: .value("Day", day.date, unit: .day),
-                y: .value("Focus", day.seconds / 3600)
-            )
-            .foregroundStyle(Color.red.gradient)
-            .cornerRadius(3)
-        }
-        .chartYAxis {
-            AxisMarks { value in
-                AxisGridLine()
-                AxisValueLabel {
-                    if let hours = value.as(Double.self) { Text(formatDuration(hours * 3600)) }
+        let today = Calendar.current.startOfDay(for: Date())
+        let maxValue = max(Self.goal + 1, daily.map(\.pomodoros).max() ?? 0)
+        return Chart {
+            ForEach(daily) { day in
+                BarMark(
+                    x: .value("Day", day.date, unit: .day),
+                    y: .value("Pomodoros", day.pomodoros)
+                )
+                .foregroundStyle(Theme.Palette.accent.opacity(day.date == today ? 1 : 0.55))
+                .cornerRadius(3)
+                .annotation(position: .top, spacing: 2) {
+                    if range == .week && day.pomodoros > 0 {
+                        Text("\(day.pomodoros)")
+                            .font(Theme.Fonts.mono(11))
+                            .foregroundStyle(Theme.Palette.textMuted)
+                    }
                 }
             }
+            RuleMark(y: .value("Goal", Self.goal))
+                .foregroundStyle(Theme.Palette.textFaint)
+                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                .annotation(position: .top, alignment: .trailing) {
+                    Text("Goal \(Self.goal)")
+                        .font(Theme.Fonts.mono(11))
+                        .foregroundStyle(Theme.Palette.textFaint)
+                }
         }
+        .chartYScale(domain: 0...maxValue)
+        .chartYAxis(.hidden)
         .chartXAxis {
             AxisMarks(values: .stride(by: .day, count: range == .week ? 1 : 7)) { _ in
                 AxisValueLabel(format: range == .week
-                               ? .dateTime.weekday(.abbreviated)
-                               : .dateTime.day().month(.abbreviated))
+                               ? .dateTime.weekday(.narrow)
+                               : .dateTime.day())
+                    .font(Theme.Fonts.mono(11))
+                    .foregroundStyle(Theme.Palette.textFaint)
             }
         }
-        .frame(height: 130)
-        .animation(.easeInOut, value: selectedKey)
+        .frame(height: 120)
+        .accessibilityLabel(chartSummary(daily))
     }
 
-    private func summary(_ records: [SessionRecord], active: NameTotal?) -> some View {
-        let total = records.reduce(0) { $0 + $1.focusSeconds }
-        let pomodoros = records.reduce(0) { $0 + $1.completedPomodoros }
-        return HStack {
-            Text("\(active.map { "\($0.displayName): " } ?? "")\(formatDuration(total)) · avg \(formatDuration(total / Double(range.rawValue)))/day · \(pomodoros) pomodoros")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer()
-            if active != nil {
-                Button("Show all") { selectedKey = "" }
-                    .buttonStyle(.link)
-                    .font(.caption)
+    private func chartSummary(_ daily: [DayTotal]) -> String {
+        let total = daily.reduce(0) { $0 + $1.pomodoros }
+        let best = daily.max { $0.pomodoros < $1.pomodoros }
+        let bestText = best.map { " Best day \($0.date.formatted(.dateTime.weekday(.wide))) with \($0.pomodoros)." } ?? ""
+        return "Pomodoros per day: \(total) over \(daily.count) days, goal \(Self.goal) a day.\(bestText)"
+    }
+
+    private func hoursRow(_ counts: [Int]) -> some View {
+        let maxCount = max(1, counts.max() ?? 1)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                ForEach(Array(counts.enumerated()), id: \.offset) { _, count in
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(count == 0
+                              ? Theme.Palette.divider
+                              : Theme.Palette.accent.opacity(0.2 + 0.8 * Double(count) / Double(maxCount)))
+                        .frame(height: 32)
+                }
             }
+            HStack {
+                Text("08:00")
+                Spacer()
+                Text("12:00")
+                Spacer()
+                Text("17:00")
+            }
+            .font(Theme.Fonts.mono(11))
+            .foregroundStyle(Theme.Palette.textFaint)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Most focused hours: \(busiestHour(counts))")
+    }
+
+    private func busiestHour(_ counts: [Int]) -> String {
+        guard let i = counts.indices.max(by: { counts[$0] < counts[$1] }), counts[i] > 0 else { return "no sessions" }
+        return String(format: "%02d:00 with %d sessions", Self.hours.lowerBound + i, counts[i])
     }
 
     private func nameList(_ names: [NameTotal]) -> some View {
-        let total = max(1, names.reduce(0) { $0 + $1.seconds })
-        return ScrollView {
-            VStack(spacing: 4) {
-                ForEach(names) { item in
-                    Button {
-                        selectedKey = selectedKey == item.key ? "" : item.key
-                    } label: {
-                        NameRow(item: item, share: item.seconds / total, isSelected: item.key == selectedKey)
-                    }
-                    .buttonStyle(.plain)
+        let top = max(1, names.first?.seconds ?? 1)
+        return VStack(spacing: Theme.Space.s) {
+            ForEach(names) { item in
+                Button {
+                    selectedKey = selectedKey == item.key ? "" : item.key
+                } label: {
+                    TaskBar(item: item, share: item.seconds / top, isSelected: item.key == selectedKey)
                 }
+                .buttonStyle(.plain)
             }
         }
-        .scrollIndicators(.hidden)
     }
 }
 
-private struct NameRow: View {
+private struct KPITile: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(Theme.Fonts.body(12))
+                .foregroundStyle(Theme.Palette.textMuted)
+            Text(value)
+                .font(Theme.Fonts.statValue)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, Theme.Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card(radius: Theme.Radius.row)
+    }
+}
+
+/// "By task" row: name, a bar scaled to the top task, and its time.
+private struct TaskBar: View {
     let item: NameTotal
     let share: Double
     let isSelected: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(item.displayName)
-                    .fontWeight(isSelected ? .semibold : .regular)
-                    .lineLimit(1)
-                Spacer()
-                Text(formatDuration(item.seconds))
-                    .monospacedDigit()
-                Text("· \(item.sessions) session\(item.sessions == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            // Drawn by hand: macOS ignores .tint on a linear ProgressView.
+        HStack(spacing: Theme.Space.s) {
+            Text(item.displayName)
+                .font(Theme.Fonts.body(12, isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? Theme.Palette.textPrimary : Theme.Palette.textMuted)
+                .lineLimit(1)
+                .frame(width: 96, alignment: .leading)
             Capsule()
-                .fill(.quaternary)
-                .frame(height: 4)
+                .fill(Theme.Palette.stroke)
+                .frame(height: 8)
                 .overlay(alignment: .leading) {
                     GeometryReader { geo in
                         Capsule()
-                            .fill(Color.red.gradient)
-                            .frame(width: max(4, geo.size.width * share))
+                            .fill(Theme.Palette.accent)
+                            .frame(width: max(8, geo.size.width * share))
                     }
                 }
+            Text(formatDuration(item.seconds))
+                .font(Theme.Fonts.mono(12))
+                .frame(width: 56, alignment: .trailing)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(isSelected ? AnyShapeStyle(Color.red.opacity(0.12)) : AnyShapeStyle(.quaternary.opacity(0.4)),
-                    in: RoundedRectangle(cornerRadius: 8))
-        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .frame(minHeight: 22)
+        .contentShape(Rectangle())
         .help(isSelected ? "Click to show all" : "Click to show only \(item.displayName)")
     }
 }

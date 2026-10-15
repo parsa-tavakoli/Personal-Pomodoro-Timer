@@ -19,6 +19,7 @@ struct PomodoroApp: App {
             ContentView()
                 .environmentObject(timer)
                 .environmentObject(history)
+                .preferredColorScheme(.dark)
         }
         .windowResizability(.contentSize)
 
@@ -32,6 +33,7 @@ struct PomodoroApp: App {
         Settings {
             SettingsView()
                 .environmentObject(timer)
+                .preferredColorScheme(.dark)
         }
     }
 }
@@ -45,8 +47,8 @@ struct ContentView: View {
         var symbol: String {
             switch self {
             case .timer: return "timer"
-            case .history: return "clock.arrow.circlepath"
-            case .stats: return "chart.bar.xaxis"
+            case .history: return "calendar"
+            case .stats: return "chart.bar"
             }
         }
     }
@@ -61,9 +63,13 @@ struct ContentView: View {
             case .stats: StatsView()
             }
         }
-        .padding()
+        .padding(.horizontal, Theme.Space.screen)
+        .padding(.vertical, Theme.Space.m)
         .frame(width: 380, height: 460)
-        .background { AmbientBackground() }
+        .foregroundStyle(Theme.Palette.textPrimary)
+        .font(Theme.Fonts.body(13))
+        // Flat ink background (design spec); glass stays on the controls only.
+        .background(Theme.Palette.background)
         .toolbar {
             // Toolbar items get Liquid Glass automatically.
             ToolbarItem(placement: .principal) {
@@ -74,6 +80,14 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelStyle(.titleAndIcon)
+                .tint(Theme.Palette.accent)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                SettingsLink {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .accessibilityLabel("Timer settings")
+                .help("Timer settings")
             }
         }
         .toolbar(removing: .title)

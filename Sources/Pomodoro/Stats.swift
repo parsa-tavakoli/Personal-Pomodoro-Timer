@@ -3,6 +3,7 @@ import Foundation
 struct DayTotal: Identifiable {
     let date: Date
     let seconds: TimeInterval
+    var pomodoros: Int = 0
     var id: Date { date }
 }
 
@@ -36,11 +37,40 @@ enum Stats {
     static func daily(_ records: [SessionRecord], days: [Date], nameKey: String?,
                       calendar: Calendar = .current) -> [DayTotal] {
         guard let first = days.first else { return [] }
-        var totals: [Date: TimeInterval] = [:]
+        var totals: [Date: (seconds: TimeInterval, pomodoros: Int)] = [:]
         for record in Self.records(records, since: first, nameKey: nameKey) {
-            totals[calendar.startOfDay(for: record.startedAt), default: 0] += record.focusSeconds
+            let day = calendar.startOfDay(for: record.startedAt)
+            totals[day, default: (0, 0)].seconds += record.focusSeconds
+            totals[day, default: (0, 0)].pomodoros += record.completedPomodoros
         }
-        return days.map { DayTotal(date: $0, seconds: totals[$0] ?? 0) }
+        return days.map { DayTotal(date: $0, seconds: totals[$0]?.seconds ?? 0, pomodoros: totals[$0]?.pomodoros ?? 0) }
+    }
+
+    /// Days in a row with at least one session, ending today (or yesterday, if today has none yet).
+    static func streak(_ records: [SessionRecord], calendar: Calendar = .current) -> Int {
+        let active = Set(records.map { calendar.startOfDay(for: $0.startedAt) })
+        var day = calendar.startOfDay(for: Date())
+        if !active.contains(day), let yesterday = calendar.date(byAdding: .day, value: -1, to: day) {
+            day = yesterday
+        }
+        var count = 0
+        while active.contains(day), let previous = calendar.date(byAdding: .day, value: -1, to: day) {
+            count += 1
+            day = previous
+        }
+        return count
+    }
+
+    /// Sessions started in each hour of `hours` (e.g. 8..<18). Approximate: whole
+    /// sessions are counted by their start hour until per-block times are logged.
+    static func startsByHour(_ records: [SessionRecord], since: Date, nameKey: String?,
+                             hours: Range<Int>, calendar: Calendar = .current) -> [Int] {
+        var counts = [Int](repeating: 0, count: hours.count)
+        for record in Self.records(records, since: since, nameKey: nameKey) {
+            let hour = calendar.component(.hour, from: record.startedAt)
+            if hours.contains(hour) { counts[hour - hours.lowerBound] += 1 }
+        }
+        return counts
     }
 
     /// Totals per session name since `since`, largest first.

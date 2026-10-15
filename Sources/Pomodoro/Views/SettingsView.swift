@@ -38,6 +38,9 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Theme.Palette.background)
+        .tint(Theme.Palette.accent)
         .frame(width: 380)
         .fixedSize(horizontal: false, vertical: true)
     }
