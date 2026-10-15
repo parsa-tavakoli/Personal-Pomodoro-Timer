@@ -1,14 +1,18 @@
-// Turns Resources/logo.png (a rounded tile on a white background) into a macOS AppIcon.icns.
-// Usage: swift scripts/make_icon.swift Resources/logo.png Resources/AppIcon.icns
+// Turns Resources/logo.png into a macOS AppIcon.icns.
+// The source is either a rounded tile on a white background (it gets cropped to the tile),
+// or, with --full-bleed, a square artwork that fills the whole image (e.g. an iOS app icon).
+// Usage: swift scripts/make_icon.swift [--full-bleed] Resources/logo.png Resources/AppIcon.icns
 import AppKit
 
-let args = CommandLine.arguments
-guard args.count == 3 else {
-    print("usage: make_icon.swift <input.png> <output.icns>")
+var args = Array(CommandLine.arguments.dropFirst())
+let fullBleed = args.first == "--full-bleed"
+if fullBleed { args.removeFirst() }
+guard args.count == 2 else {
+    print("usage: make_icon.swift [--full-bleed] <input.png> <output.icns>")
     exit(1)
 }
-let input = URL(fileURLWithPath: args[1])
-let output = URL(fileURLWithPath: args[2])
+let input = URL(fileURLWithPath: args[0])
+let output = URL(fileURLWithPath: args[1])
 
 guard let source = NSImage(contentsOf: input)?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
     print("could not read \(input.path)")
@@ -24,8 +28,10 @@ let scan = CGContext(data: &pixels, width: w, height: h, bitsPerComponent: 8, by
 scan.draw(source, in: CGRect(x: 0, y: 0, width: w, height: h))
 
 // Bounding box of the tile: anything that isn't near-white or transparent.
+// Full-bleed artwork is used whole.
 var minX = w, minY = h, maxX = -1, maxY = -1
-for y in 0..<h {
+if fullBleed { minX = 0; minY = 0; maxX = w - 1; maxY = h - 1 }
+for y in 0..<h where !fullBleed {
     for x in 0..<w {
         let i = (y * w + x) * 4
         let (r, g, b, a) = (pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3])
@@ -37,7 +43,7 @@ for y in 0..<h {
 guard maxX > minX, maxY > minY else { print("no tile found"); exit(1) }
 
 // Trim a few pixels to drop the anti-aliased white fringe. Buffer rows run top-down.
-let inset = 3
+let inset = fullBleed ? 0 : 3
 let crop = CGRect(x: minX + inset, y: minY + inset,
                   width: maxX - minX - 2 * inset, height: maxY - minY - 2 * inset)
 let tile = source.cropping(to: crop)!
