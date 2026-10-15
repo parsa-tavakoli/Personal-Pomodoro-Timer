@@ -3,10 +3,7 @@ import SwiftUI
 struct TimerView: View {
     @EnvironmentObject private var timer: SessionTimer
 
-    private var tint: Color {
-        if timer.isInOvertime { return .orange }
-        return timer.currentBlock?.kind == .focus ? .red : .green
-    }
+    private var tint: Color { timer.accentColor }
 
     private var title: String {
         guard let block = timer.currentBlock else { return "" }
@@ -18,7 +15,9 @@ struct TimerView: View {
             Text(title)
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(tint)
+                .contentTransition(.interpolate)
 
+            // The ring is content, so it stays plain (no glass).
             ZStack {
                 Circle()
                     .stroke(tint.opacity(0.15), lineWidth: 14)
@@ -30,58 +29,93 @@ struct TimerView: View {
                 Text(timer.remainingText)
                     .font(.system(size: 56, weight: .light, design: .rounded))
                     .monospacedDigit()
+                    .contentTransition(.numericText())
             }
             .frame(width: 220, height: 220)
 
             SessionProgress()
 
-            if timer.isInOvertime {
-                OvertimeChoices()
-            } else {
-                controls
-            }
+            TimerControls()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-
-    private var controls: some View {
-        HStack(spacing: 12) {
-            Button(action: timer.toggle) {
-                Text(timer.state == .running ? "Pause" : (timer.state == .paused ? "Resume" : "Start"))
-                    .frame(width: 80)
-            }
-            .keyboardShortcut(.space, modifiers: [])
-            .buttonStyle(.borderedProminent)
-            .tint(tint)
-
-            Button("Skip", action: timer.skip)
-                .disabled(timer.state == .idle)
-            Button("Stop", role: .destructive, action: timer.stop)
-                .disabled(timer.state == .idle)
-        }
-        .controlSize(.large)
-    }
 }
 
-/// Flexible mode: what to do once a countdown has run into overtime.
-private struct OvertimeChoices: View {
+/// The control bar. All buttons share one GlassEffectContainer so they sample the
+/// same backdrop and morph into each other as the session changes state:
+/// Start → Pause/Skip/Stop → overtime choices (flexible mode).
+private struct TimerControls: View {
     @EnvironmentObject private var timer: SessionTimer
+    @Namespace private var glass
 
     var body: some View {
-        HStack(spacing: 10) {
-            if timer.currentBlock?.kind == .focus {
-                Button("Short Break") { timer.continueWithBreak(.shortBreak) }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-                Button("Long Break") { timer.continueWithBreak(.longBreak) }
-            } else {
-                Button("Start Next Pomodoro", action: timer.startNextPomodoro)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
+        GlassEffectContainer(spacing: 12) {
+            HStack(spacing: 10) {
+                if timer.isInOvertime {
+                    overtimeChoices
+                } else {
+                    playbackControls
+                }
             }
-            Button("End Session", role: .destructive, action: timer.stop)
         }
         .controlSize(.large)
+        // The keyboard focus ring clashes with the glass; Space still toggles.
+        .focusEffectDisabled()
+        .animation(.bouncy, value: timer.state)
+        .animation(.bouncy, value: timer.isInOvertime)
+        .animation(.bouncy, value: timer.currentBlock?.kind)
+    }
+
+    @ViewBuilder private var playbackControls: some View {
+        Button(action: timer.toggle) {
+            Label(primaryTitle, systemImage: primarySymbol)
+                .frame(minWidth: 84)
+        }
+        .keyboardShortcut(.space, modifiers: [])
+        .buttonStyle(.glassProminent)
+        .tint(timer.accentColor)
+        .glassEffectID("primary", in: glass)
+
+        if timer.state != .idle {
+            Button("Skip", systemImage: "forward.end.fill", action: timer.skip)
+                .buttonStyle(.glass)
+                .glassEffectID("secondary", in: glass)
+            Button("Stop", systemImage: "stop.fill", role: .destructive, action: timer.stop)
+                .buttonStyle(.glass)
+                .glassEffectID("end", in: glass)
+        }
+    }
+
+    @ViewBuilder private var overtimeChoices: some View {
+        if timer.currentBlock?.kind == .focus {
+            Button("Short Break") { timer.continueWithBreak(.shortBreak) }
+                .buttonStyle(.glassProminent)
+                .tint(.green)
+                .glassEffectID("primary", in: glass)
+            Button("Long Break") { timer.continueWithBreak(.longBreak) }
+                .buttonStyle(.glass)
+                .glassEffectID("secondary", in: glass)
+        } else {
+            Button("Next Pomodoro", systemImage: "play.fill", action: timer.startNextPomodoro)
+                .buttonStyle(.glassProminent)
+                .tint(.red)
+                .glassEffectID("primary", in: glass)
+        }
+        Button("End", systemImage: "stop.fill", role: .destructive, action: timer.stop)
+            .buttonStyle(.glass)
+            .glassEffectID("end", in: glass)
+    }
+
+    private var primaryTitle: String {
+        switch timer.state {
+        case .idle: return "Start"
+        case .running: return "Pause"
+        case .paused: return "Resume"
+        }
+    }
+
+    private var primarySymbol: String {
+        timer.state == .running ? "pause.fill" : "play.fill"
     }
 }
 
