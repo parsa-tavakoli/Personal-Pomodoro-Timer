@@ -23,6 +23,8 @@ struct HistoryView: View {
                     }
                     .onDelete(perform: history.delete)
                 }
+                // Let the ambient background show through; rows stay plain content.
+                .scrollContentBackground(.hidden)
             }
         }
     }

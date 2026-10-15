@@ -37,15 +37,38 @@ struct PomodoroApp: App {
 }
 
 struct ContentView: View {
+    enum Page: String, CaseIterable {
+        case timer = "Timer"
+        case history = "History"
+
+        var symbol: String { self == .timer ? "timer" : "clock.arrow.circlepath" }
+    }
+
+    @AppStorage("selectedPage") private var page: Page = .timer
+
     var body: some View {
-        TabView {
-            TimerView()
-                .tabItem { Label("Timer", systemImage: "timer") }
-            HistoryView()
-                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+        Group {
+            switch page {
+            case .timer: TimerView()
+            case .history: HistoryView()
+            }
         }
         .padding()
-        .frame(width: 380, height: 480)
+        .frame(width: 380, height: 460)
+        .background { AmbientBackground() }
+        .toolbar {
+            // Toolbar items get Liquid Glass automatically.
+            ToolbarItem(placement: .principal) {
+                Picker("Page", selection: $page) {
+                    ForEach(Page.allCases, id: \.self) { page in
+                        Label(page.rawValue, systemImage: page.symbol).tag(page)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelStyle(.titleAndIcon)
+            }
+        }
+        .toolbar(removing: .title)
     }
 }
 
