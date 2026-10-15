@@ -4,12 +4,10 @@ import SwiftUI
 struct TimerView: View {
     @EnvironmentObject private var timer: SessionTimer
 
-    private var tint: Color { timer.accentColor }
-
     var body: some View {
         VStack(spacing: 10) {
             ModeChips()
-            ring
+            RingView(clock: timer.clock)
             SessionProgress()
             TaskPill()
             TimerControls()
@@ -18,11 +16,17 @@ struct TimerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
 
-    // Content, so no glass. Scaled from the spec's 300/14 to fit the window.
-    private var ring: some View {
+/// Ring and time. The only part of the Timer page that observes the ticking clock.
+private struct RingView: View {
+    @EnvironmentObject private var timer: SessionTimer
+    @ObservedObject var clock: TimerClock
+
+    var body: some View {
+        // Content, so no glass. Scaled from the spec's 300/14 to fit the window.
         ZStack {
-            ProgressRing(progress: timer.blockProgress, color: tint, size: 196, lineWidth: 11)
+            ProgressRing(progress: timer.blockProgress, color: timer.accentColor, size: 196, lineWidth: 11)
             VStack(spacing: 4) {
                 Text(timer.remainingText)
                     .font(Theme.Fonts.mono(46))
@@ -38,7 +42,7 @@ struct TimerView: View {
             .padding(.horizontal, 24)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(ringAccessibilityLabel)
+        .accessibilityLabel(accessibilityText)
     }
 
     private var subtitle: String {
@@ -46,9 +50,9 @@ struct TimerView: View {
         return "\(phase) · \(timer.progressText.lowercased())"
     }
 
-    private var ringAccessibilityLabel: String {
+    private var accessibilityText: String {
         let phase = timer.currentBlock?.kind.rawValue ?? "Focus"
-        let seconds = Int(timer.isInOvertime ? timer.overtime : timer.remaining)
+        let seconds = Int(timer.isInOvertime ? clock.overtime : clock.remaining)
         let time = "\(seconds / 60) minutes \(seconds % 60) seconds"
         return timer.isInOvertime ? "\(phase) overtime, \(time) over" : "\(phase) session, \(time) left"
     }
@@ -118,13 +122,17 @@ private struct TodayCard: View {
 /// so they morph between the playback circles and the overtime choices.
 private struct TimerControls: View {
     @EnvironmentObject private var timer: SessionTimer
+    @Environment(\.isVisiblePage) private var isVisiblePage
     @Namespace private var glass
 
+    /// One smooth curve for every morph; .bouncy's overshoot made the glass wobble.
+    private let morph = Animation.smooth(duration: 0.45)
+
     var body: some View {
-        // Glass shapes closer than the container spacing blend into one blob, so keep
-        // the gaps (12/24) well above it; glassEffectID still morphs between states.
-        GlassEffectContainer(spacing: 4) {
-            HStack(spacing: timer.isInOvertime ? Theme.Space.m : 24) {
+        // Shapes within the container spacing flow together while morphing. At rest
+        // the gaps (22/24) stay well above it, so buttons never blend, even when pressed.
+        GlassEffectContainer(spacing: 12) {
+            HStack(spacing: timer.isInOvertime ? 22 : 24) {
                 if timer.isInOvertime {
                     overtimeChoices
                 } else {
@@ -135,9 +143,9 @@ private struct TimerControls: View {
         .frame(height: 64)
         // The keyboard focus ring clashes with the glass; Space still toggles.
         .focusEffectDisabled()
-        .animation(.bouncy, value: timer.state)
-        .animation(.bouncy, value: timer.isInOvertime)
-        .animation(.bouncy, value: timer.currentBlock?.kind)
+        .animation(morph, value: timer.state)
+        .animation(morph, value: timer.isInOvertime)
+        .animation(morph, value: timer.currentBlock?.kind)
     }
 
     @ViewBuilder private var playbackControls: some View {
@@ -154,7 +162,8 @@ private struct TimerControls: View {
         .buttonStyle(.glassProminent)
         .buttonBorderShape(.circle)
         .tint(timer.accentColor)
-        .keyboardShortcut(.space, modifiers: [])
+        // Only while the Timer page is showing (other pages stay alive behind it).
+        .keyboardShortcut(isVisiblePage ? KeyboardShortcut(.space, modifiers: []) : nil)
         .accessibilityLabel(timer.state == .running ? "Pause" : (timer.state == .paused ? "Resume" : "Start"))
         .glassEffectID("primary", in: glass)
 
@@ -196,9 +205,9 @@ private struct TimerControls: View {
     @ViewBuilder
     private func textButton(_ title: String, prominent: Color? = nil,
                             action: @escaping () -> Void) -> some View {
+        // Compact so the row fits with 22 pt gaps.
         let label = Text(title)
-            .font(Theme.Fonts.body(14, .semibold))
-            .padding(.horizontal, 6)
+            .font(Theme.Fonts.body(13, .semibold))
             .frame(minHeight: 32)
         if let prominent {
             Button(action: action) { label.foregroundStyle(Theme.Palette.onAccent) }

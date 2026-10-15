@@ -27,7 +27,8 @@ struct PomodoroApp: App {
             MenuBarMenu()
                 .environmentObject(timer)
         } label: {
-            Text(timer.menuBarText)
+            MenuBarLabel(clock: timer.clock)
+                .environmentObject(timer)
         }
 
         Settings {
@@ -56,13 +57,14 @@ struct ContentView: View {
     @AppStorage("selectedPage") private var page: Page = .timer
 
     var body: some View {
-        Group {
-            switch page {
-            case .timer: TimerView()
-            case .history: HistoryView()
-            case .stats: StatsView()
-            }
+        // All pages stay alive and only their visibility changes, so a click on the
+        // picker never builds a page (e.g. the Stats chart) while its glass animates.
+        ZStack {
+            page(.timer) { TimerView() }
+            page(.history) { HistoryView() }
+            page(.stats) { StatsView() }
         }
+        .animation(.easeInOut(duration: 0.2), value: page)
         .padding(.horizontal, Theme.Space.screen)
         .padding(.vertical, Theme.Space.m)
         .frame(width: 380, height: 460)
@@ -73,14 +75,7 @@ struct ContentView: View {
         .toolbar {
             // Toolbar items get Liquid Glass automatically.
             ToolbarItem(placement: .principal) {
-                Picker("Page", selection: $page) {
-                    ForEach(Page.allCases, id: \.self) { page in
-                        Label(page.rawValue, systemImage: page.symbol).tag(page)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelStyle(.titleAndIcon)
-                .tint(Theme.Palette.accent)
+                PagePicker()
             }
             ToolbarItem(placement: .primaryAction) {
                 SettingsLink {
@@ -91,6 +86,54 @@ struct ContentView: View {
             }
         }
         .toolbar(removing: .title)
+    }
+
+    private func page<Content: View>(_ which: Page, @ViewBuilder content: () -> Content) -> some View {
+        let visible = page == which
+        return content()
+            .environment(\.isVisiblePage, visible)
+            .opacity(visible ? 1 : 0)
+            .allowsHitTesting(visible)
+            .accessibilityHidden(!visible)
+    }
+}
+
+private struct VisiblePageKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    /// False for pages kept alive behind the visible one (their keyboard shortcuts stay off).
+    var isVisiblePage: Bool {
+        get { self[VisiblePageKey.self] }
+        set { self[VisiblePageKey.self] = newValue }
+    }
+}
+
+/// The toolbar's glass page switcher, kept as its own view so the toolbar item
+/// isn't rebuilt each time the page changes.
+private struct PagePicker: View {
+    @AppStorage("selectedPage") private var page: ContentView.Page = .timer
+
+    var body: some View {
+        Picker("Page", selection: $page) {
+            ForEach(ContentView.Page.allCases, id: \.self) { page in
+                Label(page.rawValue, systemImage: page.symbol).tag(page)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelStyle(.titleAndIcon)
+        .tint(Theme.Palette.accent)
+    }
+}
+
+/// Menu bar time. Observes only the clock, which changes every tick.
+private struct MenuBarLabel: View {
+    @EnvironmentObject private var timer: SessionTimer
+    @ObservedObject var clock: TimerClock
+
+    var body: some View {
+        Text(timer.menuBarText)
     }
 }
 

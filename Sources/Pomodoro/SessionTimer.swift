@@ -16,13 +16,22 @@ final class SessionTimer: ObservableObject {
     }
     @Published private(set) var blocks: [Block] = []
     @Published private(set) var index = 0
-    @Published private(set) var remaining: TimeInterval = 0
+    /// Ticking values live in `clock`, so views that don't show the time
+    /// (e.g. the glass controls) aren't redrawn twice a second.
+    let clock = TimerClock()
+    private(set) var remaining: TimeInterval {
+        get { clock.remaining }
+        set { clock.remaining = newValue }
+    }
     @Published private(set) var state: State = .idle
     /// Config snapshot for the running session, so edits in Settings apply to the next one.
     @Published private(set) var sessionConfig = SessionConfig()
     /// Flexible mode: a finished countdown keeps counting up until you choose what's next.
     @Published private(set) var isInOvertime = false
-    @Published private(set) var overtime: TimeInterval = 0
+    private(set) var overtime: TimeInterval {
+        get { clock.overtime }
+        set { clock.overtime = newValue }
+    }
     /// Optional name for the big session; editable before and during it.
     @Published var sessionName = ""
 
@@ -317,4 +326,11 @@ private final class NotificationDelegate: NSObject, UNUserNotificationCenterDele
     ) {
         completionHandler([.banner, .list])
     }
+}
+
+/// The values that change on every tick.
+@MainActor
+final class TimerClock: ObservableObject {
+    @Published var remaining: TimeInterval = 0
+    @Published var overtime: TimeInterval = 0
 }
