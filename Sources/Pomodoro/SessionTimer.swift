@@ -203,9 +203,11 @@ final class SessionTimer: ObservableObject {
         overtime = 0
         isInOvertime = true
         if block.kind == .focus {
-            notify(title: "Pomodoro \(block.pomodoro) done 🍅", body: "Take a short or long break when you're ready.")
+            notify(title: "Pomodoro \(block.pomodoro) complete",
+                   body: "Nice work. Take a short or long break when you're ready.")
         } else {
-            notify(title: "Break over ☕️", body: "Start the next pomodoro when you're ready.")
+            notify(title: "Break's over",
+                   body: "Ready for pomodoro \(block.pomodoro + 1)? Start whenever you are.")
         }
     }
 
@@ -226,13 +228,24 @@ final class SessionTimer: ObservableObject {
 
         index += 1
         guard let next = currentBlock else {
-            notify(title: "Session complete 🎉", body: "\(completedPomodoros) pomodoros done.")
+            let count = "\(completedPomodoros) pomodoro\(completedPomodoros == 1 ? "" : "s")"
+            notify(title: "Session complete",
+                   body: "\(count) · \(formatDuration(focusSeconds)) of focus. Well done.")
             finish(finished: true)
             return
         }
 
         if completedNaturally {
-            notify(title: "\(block.kind.rawValue) finished", body: "Next: \(next.kind.rawValue) (\(Self.format(next.duration)))")
+            let total = sessionConfig.totalPomodoros
+            let length = Self.minutes(next.duration)
+            switch next.kind {
+            case .shortBreak, .longBreak:
+                notify(title: next.kind == .shortBreak ? "Time for a short break" : "Time for a long break",
+                       body: "\(length) · pomodoro \(block.pomodoro) of \(total) done")
+            case .focus:
+                notify(title: "Back to focus",
+                       body: "\(length) · pomodoro \(next.pomodoro) of \(total)")
+            }
         }
         remaining = next.duration
         if state == .running { endDate = Date().addingTimeInterval(remaining) }
@@ -296,6 +309,12 @@ final class SessionTimer: ObservableObject {
     }
 
     // MARK: - Helpers
+
+    /// "1 minute", "25 minutes".
+    static func minutes(_ seconds: TimeInterval) -> String {
+        let m = Int(seconds) / 60
+        return "\(m) minute\(m == 1 ? "" : "s")"
+    }
 
     static func format(_ seconds: TimeInterval) -> String {
         let s = Int(max(0, seconds))
