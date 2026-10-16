@@ -12,7 +12,7 @@ struct StatsView: View {
 
     /// Daily pomodoro goal shown on the chart. Fixed for now.
     static let goal = 8
-    private static let hours = 8..<18
+    private static let hours = 0..<24
 
     @EnvironmentObject private var history: HistoryStore
     // @AppStorage rather than @State (no SwiftUI macro plugin with the Command Line Tools).
@@ -163,21 +163,29 @@ struct StatsView: View {
     private func hoursRow(_ counts: [Int]) -> some View {
         let maxCount = max(1, counts.max() ?? 1)
         return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
-                ForEach(Array(counts.enumerated()), id: \.offset) { _, count in
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+            // All 24 hours; cells are thin, so each one names its hour on hover.
+            HStack(spacing: 2) {
+                ForEach(Array(counts.enumerated()), id: \.offset) { i, count in
+                    let hour = Self.hours.lowerBound + i
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(count == 0
                               ? Theme.Palette.divider
                               : Theme.Palette.accent.opacity(0.2 + 0.8 * Double(count) / Double(maxCount)))
                         .frame(height: 32)
+                        .help(String(format: "%02d:00–%02d:00 · %d session%@",
+                                     hour, hour + 1, count, count == 1 ? "" : "s"))
                 }
             }
             HStack {
-                Text("08:00")
+                Text("00:00")
+                Spacer()
+                Text("06:00")
                 Spacer()
                 Text("12:00")
                 Spacer()
-                Text("17:00")
+                Text("18:00")
+                Spacer()
+                Text("24:00")
             }
             .font(Theme.Fonts.mono(11))
             .foregroundStyle(Theme.Palette.textFaint)
