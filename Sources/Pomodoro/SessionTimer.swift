@@ -45,12 +45,21 @@ final class SessionTimer: ObservableObject {
     private var countdownElapsed: TimeInterval = 0
 
     private let notificationDelegate = NotificationDelegate()
+    private var activationObserver: NSObjectProtocol?
 
     init(history: HistoryStore) {
         self.history = history
         self.config = Self.loadConfig()
         reset()
-        if canNotify { UNUserNotificationCenter.current().delegate = notificationDelegate }
+        if canNotify {
+            UNUserNotificationCenter.current().delegate = notificationDelegate
+            // Opening the app counts as having seen its notifications.
+            activationObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.clearNotifications() }
+            }
+        }
     }
 
     // MARK: - Derived
@@ -149,6 +158,7 @@ final class SessionTimer: ObservableObject {
     /// Ends the whole session and saves what was done.
     func stop() {
         guard state != .idle else { return }
+        clearNotifications()
         if state == .running { tick() }
         if isInOvertime {
             // Flexible: the countdown already ran out, so this is a normal ending.
@@ -304,8 +314,21 @@ final class SessionTimer: ObservableObject {
         content.body = body
         let name = sessionName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty { content.subtitle = name }
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+        // Only the latest status matters: drop earlier ones (which otherwise pile up in
+        // Notification Center and stack behind each new banner), and reuse one ID so
+        // macOS replaces rather than adds.
+        let center = UNUserNotificationCenter.current()
+        center.removeAllDeliveredNotifications()
+        let request = UNNotificationRequest(identifier: Self.notificationID, content: content, trigger: nil)
+        center.add(request)
+    }
+
+    private static let notificationID = "pomodoro.status"
+
+    /// Removes Pomodoro's own delivered notifications (never other apps').
+    private func clearNotifications() {
+        guard canNotify else { return }
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
     }
 
     // MARK: - Helpers
