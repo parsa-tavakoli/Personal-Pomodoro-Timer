@@ -5,6 +5,7 @@ import SwiftUI
 struct PomodoroApp: App {
     @StateObject private var history: HistoryStore
     @StateObject private var timer: SessionTimer
+    @StateObject private var updates = UpdateChecker()
 
     init() {
         let history = HistoryStore()
@@ -19,6 +20,7 @@ struct PomodoroApp: App {
             ContentView()
                 .environmentObject(timer)
                 .environmentObject(history)
+                .environmentObject(updates)
                 .preferredColorScheme(.dark)
         }
         .windowResizability(.contentSize)
@@ -26,6 +28,7 @@ struct PomodoroApp: App {
         MenuBarExtra {
             MenuBarMenu()
                 .environmentObject(timer)
+                .environmentObject(updates)
         } label: {
             MenuBarLabel(clock: timer.clock)
                 .environmentObject(timer)
@@ -139,7 +142,9 @@ private struct MenuBarLabel: View {
 
 struct MenuBarMenu: View {
     @EnvironmentObject private var timer: SessionTimer
+    @EnvironmentObject private var updates: UpdateChecker
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         if let block = timer.currentBlock, timer.state != .idle {
@@ -161,6 +166,9 @@ struct MenuBarMenu: View {
             NSApp.activate(ignoringOtherApps: true)
         }
         SettingsLink { Text("Settings…") }
+        if let update = updates.available {
+            Button("Download Pomodoro \(update.version)…") { openURL(update.url) }
+        }
         Divider()
         Button("Quit") { NSApp.terminate(nil) }
             .keyboardShortcut("q")

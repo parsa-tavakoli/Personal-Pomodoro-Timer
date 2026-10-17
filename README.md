@@ -40,6 +40,10 @@ Pomodoro opens. From now on it opens normally, like any other app.
 
 When Pomodoro asks to send notifications, click **Allow**, so it can tell you when a timer finishes.
 
+## Privacy
+
+Everything stays on your Mac. The only time Pomodoro goes online is to check this page for a newer version (once at launch and once a day); it sends nothing about you or your sessions.
+
 ## Uninstall
 
 Drag **Pomodoro** from Applications to the Trash. To also delete your history, remove the folder `~/Library/Application Support/Pomodoro` (in Finder: **Go → Go to Folder…** and paste that path).
@@ -70,3 +74,8 @@ git push origin v1.0.0
 To try the build without publishing, run the **Release** workflow by hand from the *Actions* tab; the `.dmg` appears under the run's *Artifacts*.
 
 The app is currently ad-hoc signed, which is why users see the one-time "Open Anyway" step. With an Apple Developer account, the commented-out signing and notarization steps in `release.yml` remove that step.
+
+## License
+
+Pomodoro is free software under the [MIT License](LICENSE).
+The bundled fonts (Space Grotesk, IBM Plex Sans, JetBrains Mono) are under the [SIL Open Font License](Resources/Fonts/licenses).

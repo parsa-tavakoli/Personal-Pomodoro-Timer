@@ -8,6 +8,8 @@
     <string>Pomodoro</string>
     <key>CFBundleDisplayName</key>
     <string>Pomodoro</string>
+    <key>ATSApplicationFontsPath</key>
+    <string>Fonts</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleExecutable</key>

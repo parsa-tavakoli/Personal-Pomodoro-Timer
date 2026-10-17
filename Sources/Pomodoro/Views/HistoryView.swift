@@ -7,8 +7,16 @@ final class HistorySelection: ObservableObject {
 }
 
 struct HistoryView: View {
+    enum Mode: String, CaseIterable {
+        case timeline = "Timeline"
+        case list = "List"
+    }
+
     @EnvironmentObject private var history: HistoryStore
+    @EnvironmentObject private var timer: SessionTimer
     @StateObject private var selection = HistorySelection()
+    // @AppStorage rather than @State (no SwiftUI macro plugin with the Command Line Tools).
+    @AppStorage("historyMode") private var mode: Mode = .timeline
 
     private let calendar = Calendar.current
 
@@ -20,20 +28,26 @@ struct HistoryView: View {
                 Text("History")
                     .font(Theme.Fonts.screenTitle)
                 Spacer()
-                Text(selection.day.formatted(.dateTime.month(.wide).year()))
-                    .font(Theme.Fonts.body(13))
-                    .foregroundStyle(Theme.Palette.textMuted)
+                Picker("View", selection: $mode) {
+                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .tint(Theme.Palette.inactive)
             }
 
             WeekStrip(selection: selection)
 
             DayTotalRow(records: dayRecords)
 
-            if dayRecords.isEmpty {
+            if dayRecords.isEmpty && !runningOn(selection.day) {
                 Text("No sessions on this day")
                     .font(Theme.Fonts.body(13))
                     .foregroundStyle(Theme.Palette.textMuted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if mode == .timeline {
+                DayTimeline(day: selection.day, records: dayRecords)
             } else {
                 ScrollView {
                     VStack(spacing: Theme.Space.s) {
@@ -49,6 +63,12 @@ struct HistoryView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// A session is running that started on `day` (the timeline shows it live).
+    private func runningOn(_ day: Date) -> Bool {
+        guard timer.state != .idle, let started = timer.sessionStartedAt else { return false }
+        return calendar.isDate(started, inSameDayAs: day)
     }
 }
 
@@ -114,15 +134,23 @@ private struct DayTotalRow: View {
     var body: some View {
         let focus = records.reduce(0) { $0 + $1.focusSeconds }
         HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(Theme.Palette.accent)
-                .frame(width: 10, height: 10)
-            Text("Focus")
-                .foregroundStyle(Theme.Palette.textMuted)
+            swatch(Theme.Palette.accent, "Focus")
+            swatch(Theme.Palette.breakColor, "Break")
+                .padding(.leading, 6)
             Spacer()
             Text("**\(records.count)** session\(records.count == 1 ? "" : "s") · \(formatDuration(focus))")
         }
         .font(Theme.Fonts.body(12))
+    }
+
+    private func swatch(_ color: Color, _ label: String) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(color)
+                .frame(width: 10, height: 10)
+            Text(label)
+                .foregroundStyle(Theme.Palette.textMuted)
+        }
     }
 }
 

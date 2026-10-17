@@ -20,7 +20,8 @@ struct StatsView: View {
     @AppStorage("statsName") private var selectedKey = ""
 
     var body: some View {
-        let days = Stats.days(range.rawValue)
+        // Week = this calendar week, Monday first; Month = the last 30 days.
+        let days = range == .week ? Stats.currentWeek() : Stats.days(range.rawValue)
         let since = days.first ?? Date()
         let names = Stats.byName(history.records, since: since)
         // Ignore a remembered name that has no sessions in this range.
@@ -43,7 +44,7 @@ struct StatsView: View {
             }
 
             if names.isEmpty {
-                Text("No sessions in the last \(range.rawValue) days")
+                Text(range == .week ? "No sessions this week" : "No sessions in the last 30 days")
                     .font(Theme.Fonts.body(13))
                     .foregroundStyle(Theme.Palette.textMuted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -58,7 +59,7 @@ struct StatsView: View {
                             chart(Stats.daily(history.records, days: days, nameKey: active?.key))
                         }
                         card("Most focused hours") {
-                            hoursRow(Stats.startsByHour(history.records, since: since,
+                            hoursRow(Stats.focusByHour(history.records, since: since,
                                                         nameKey: active?.key, hours: Self.hours))
                         }
                         card("By task") {
@@ -160,20 +161,20 @@ struct StatsView: View {
         return "Pomodoros per day: \(total) over \(daily.count) days, goal \(Self.goal) a day.\(bestText)"
     }
 
-    private func hoursRow(_ counts: [Int]) -> some View {
-        let maxCount = max(1, counts.max() ?? 1)
+    private func hoursRow(_ seconds: [TimeInterval]) -> some View {
+        let most = max(1, seconds.max() ?? 1)
         return VStack(alignment: .leading, spacing: 6) {
             // All 24 hours; cells are thin, so each one names its hour on hover.
             HStack(spacing: 2) {
-                ForEach(Array(counts.enumerated()), id: \.offset) { i, count in
+                ForEach(Array(seconds.enumerated()), id: \.offset) { i, focus in
                     let hour = Self.hours.lowerBound + i
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(count == 0
+                        .fill(focus < 60
                               ? Theme.Palette.divider
-                              : Theme.Palette.accent.opacity(0.2 + 0.8 * Double(count) / Double(maxCount)))
+                              : Theme.Palette.accent.opacity(0.2 + 0.8 * focus / most))
                         .frame(height: 32)
-                        .help(String(format: "%02d:00–%02d:00 · %d session%@",
-                                     hour, hour + 1, count, count == 1 ? "" : "s"))
+                        .help(String(format: "%02d:00–%02d:00 · ", hour, hour + 1)
+                              + (focus < 60 ? "no focus" : "\(formatDuration(focus)) focus"))
                 }
             }
             HStack {
@@ -191,12 +192,12 @@ struct StatsView: View {
             .foregroundStyle(Theme.Palette.textFaint)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Most focused hours: \(busiestHour(counts))")
+        .accessibilityLabel("Most focused hours: \(busiestHour(seconds))")
     }
 
-    private func busiestHour(_ counts: [Int]) -> String {
-        guard let i = counts.indices.max(by: { counts[$0] < counts[$1] }), counts[i] > 0 else { return "no sessions" }
-        return String(format: "%02d:00 with %d sessions", Self.hours.lowerBound + i, counts[i])
+    private func busiestHour(_ seconds: [TimeInterval]) -> String {
+        guard let i = seconds.indices.max(by: { seconds[$0] < seconds[$1] }), seconds[i] >= 60 else { return "no focus yet" }
+        return String(format: "%02d:00, ", Self.hours.lowerBound + i) + "\(formatDuration(seconds[i])) of focus"
     }
 
     private func nameList(_ names: [NameTotal]) -> some View {

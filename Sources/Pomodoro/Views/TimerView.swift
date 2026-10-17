@@ -3,9 +3,20 @@ import SwiftUI
 
 struct TimerView: View {
     @EnvironmentObject private var timer: SessionTimer
+    @EnvironmentObject private var updates: UpdateChecker
+    @AppStorage("dismissedUpdate") private var dismissedUpdate = ""
+
+    private var update: UpdateChecker.Update? {
+        guard let update = updates.available, update.version != dismissedUpdate else { return nil }
+        return update
+    }
 
     var body: some View {
-        VStack(spacing: 10) {
+        // Rows sit a little closer while the update pill is showing, so everything still fits.
+        VStack(spacing: update == nil ? 10 : 6) {
+            if let update {
+                UpdatePill(update: update) { dismissedUpdate = update.version }
+            }
             ModeChips()
             RingView(clock: timer.clock)
             SessionProgress()
@@ -255,5 +266,40 @@ struct SessionNameField: View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
             .onSubmit { NSApp.keyWindow?.makeFirstResponder(nil) }
+    }
+}
+
+/// "Version 1.0.4 is available · Download". Dismissing hides it for that version only.
+private struct UpdatePill: View {
+    let update: UpdateChecker.Update
+    let dismiss: () -> Void
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        HStack(spacing: Theme.Space.s) {
+            Image(systemName: "arrow.down.circle")
+                .foregroundStyle(Theme.Palette.accent)
+            Text("Version \(update.version) is available")
+            Text("·").foregroundStyle(Theme.Palette.textMuted)
+            Button("Download") { openURL(update.url) }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.Palette.accent)
+                .fontWeight(.semibold)
+            Spacer(minLength: 0)
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.Palette.textMuted)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss update notice")
+        }
+        .font(Theme.Fonts.body(12))
+        .padding(.horizontal, Theme.Space.m)
+        .frame(height: 28)
+        .background(Theme.Palette.accent.opacity(0.12), in: Capsule())
+        .overlay { Capsule().strokeBorder(Theme.Palette.accent.opacity(0.35), lineWidth: 1) }
     }
 }

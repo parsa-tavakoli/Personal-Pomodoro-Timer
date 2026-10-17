@@ -74,12 +74,13 @@ enum Theme {
         static func display(_ size: CGFloat) -> Font {
             custom("SpaceGrotesk-Bold", size, fallback: .system(size: size, weight: .bold, design: .rounded))
         }
+        // PostScript names as stored in IBM's static TTFs (Medm/SmBld, not Medium/SemiBold).
         static func body(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
             let name: String
             switch weight {
-            case .semibold, .bold, .heavy, .black: name = "IBMPlexSans-SemiBold"
-            case .medium: name = "IBMPlexSans-Medium"
-            default: name = "IBMPlexSans-Regular"
+            case .semibold, .bold, .heavy, .black: name = "IBMPlexSans-SmBld"
+            case .medium: name = "IBMPlexSans-Medm"
+            default: name = "IBMPlexSans"
             }
             return custom(name, size, fallback: .system(size: size, weight: weight))
         }

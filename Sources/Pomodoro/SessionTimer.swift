@@ -44,6 +44,10 @@ final class SessionTimer: ObservableObject {
     /// Countdown time used before overtime began (less than the full block if skipped).
     private var countdownElapsed: TimeInterval = 0
 
+    /// Block log for the History timeline: finished segments, plus the start of the open one.
+    @Published private(set) var blockLog: [LoggedBlock] = []
+    @Published private(set) var segmentStart: Date?
+
     private let notificationDelegate = NotificationDelegate()
     private var activationObserver: NSObjectProtocol?
 
@@ -89,6 +93,14 @@ final class SessionTimer: ObservableObject {
         return isFlexible ? "Pomodoro \(n)" : "Pomodoro \(n) of \(sessionConfig.totalPomodoros)"
     }
 
+    /// The running session's blocks so far, including the segment in progress.
+    func liveBlocks(now: Date = Date()) -> [LoggedBlock] {
+        guard let segmentStart, let kind = currentBlock?.kind else { return blockLog }
+        return blockLog + [LoggedBlock(start: segmentStart, end: now, kind: kind)]
+    }
+
+    var sessionStartedAt: Date? { sessionStart }
+
     /// Menu bar shows only the time, no icons.
     var menuBarText: String { remainingText }
 
@@ -105,6 +117,7 @@ final class SessionTimer: ObservableObject {
     func pause() {
         guard state == .running, !isInOvertime else { return }
         tick()
+        closeSegment()
         state = .paused
         endDate = nil
         ticker?.invalidate()
@@ -128,7 +141,7 @@ final class SessionTimer: ObservableObject {
     func skip() {
         guard state != .idle, !isInOvertime else { return }
         if isFlexible {
-            if state == .paused { state = .running; startTicker() }
+            if state == .paused { state = .running; startTicker(); openSegment() }
             endDate = Date()
             enterOvertime()
         } else {
@@ -142,17 +155,21 @@ final class SessionTimer: ObservableObject {
         tick()
         focusSeconds += countdownElapsed + overtime
         completedPomodoros += 1
+        closeSegment()
         blocks.append(Block(kind: kind, duration: sessionConfig.duration(of: kind), pomodoro: block.pomodoro))
         index += 1
         beginCurrentBlock()
+        openSegment()
     }
 
     /// Flexible: after a break's overtime, start the next pomodoro.
     func startNextPomodoro() {
         guard isInOvertime, let block = currentBlock, block.kind != .focus else { return }
+        closeSegment()
         blocks.append(Block(kind: .focus, duration: sessionConfig.duration(of: .focus), pomodoro: block.pomodoro + 1))
         index += 1
         beginCurrentBlock()
+        openSegment()
     }
 
     /// Ends the whole session and saves what was done.
@@ -181,6 +198,23 @@ final class SessionTimer: ObservableObject {
         state = .running
         endDate = Date().addingTimeInterval(remaining)
         startTicker()
+        openSegment()
+    }
+
+    private func openSegment() {
+        guard state == .running, segmentStart == nil else { return }
+        segmentStart = Date()
+    }
+
+    /// Ends the open segment, logging it under the current block's kind.
+    private func closeSegment() {
+        guard let start = segmentStart else { return }
+        segmentStart = nil
+        guard let kind = currentBlock?.kind else { return }
+        let end = Date()
+        if end.timeIntervalSince(start) >= 1 {
+            blockLog.append(LoggedBlock(start: start, end: end, kind: kind))
+        }
     }
 
     private func startTicker() {
@@ -236,6 +270,7 @@ final class SessionTimer: ObservableObject {
             if completedNaturally { completedPomodoros += 1 }
         }
 
+        closeSegment()
         index += 1
         guard let next = currentBlock else {
             let count = "\(completedPomodoros) pomodoro\(completedPomodoros == 1 ? "" : "s")"
@@ -258,10 +293,14 @@ final class SessionTimer: ObservableObject {
             }
         }
         remaining = next.duration
-        if state == .running { endDate = Date().addingTimeInterval(remaining) }
+        if state == .running {
+            endDate = Date().addingTimeInterval(remaining)
+            openSegment()
+        }
     }
 
     private func finish(finished: Bool) {
+        closeSegment()
         // Ignore sessions with under a minute of focus (accidental start/stop).
         if let sessionStart, focusSeconds >= 60 {
             history.add(SessionRecord(
@@ -271,7 +310,8 @@ final class SessionTimer: ObservableObject {
                 completedPomodoros: completedPomodoros,
                 focusSeconds: focusSeconds,
                 finished: finished,
-                name: sessionName.trimmingCharacters(in: .whitespacesAndNewlines)
+                name: sessionName.trimmingCharacters(in: .whitespacesAndNewlines),
+                blocks: blockLog
             ))
         }
         // Cleared here, not in reset(): start() resets, and must keep a name typed beforehand.
@@ -290,6 +330,8 @@ final class SessionTimer: ObservableObject {
         isInOvertime = false
         overtime = 0
         countdownElapsed = 0
+        blockLog = []
+        segmentStart = nil
         sessionConfig = config
         blocks = Session.blocks(for: config)
         index = 0

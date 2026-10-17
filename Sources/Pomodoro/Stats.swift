@@ -9,7 +9,7 @@ struct DayTotal: Identifiable {
 
 struct NameTotal: Identifiable {
     let key: String
-    /// Most recent spelling of the name, or "Untitled".
+    /// Most recent spelling of the name, or "Untitled session".
     let displayName: String
     let seconds: TimeInterval
     let sessions: Int
@@ -22,6 +22,14 @@ enum Stats {
     static func key(for name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return trimmed.isEmpty ? "untitled" : trimmed
+    }
+
+    /// Monday to Sunday of the current week (always Monday-first, whatever the region).
+    static func currentWeek(calendar: Calendar = .current) -> [Date] {
+        var cal = calendar
+        cal.firstWeekday = 2
+        let start = cal.dateInterval(of: .weekOfYear, for: Date())?.start ?? cal.startOfDay(for: Date())
+        return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
     }
 
     /// Start of each of the last `count` days, oldest first, ending today.
@@ -63,14 +71,34 @@ enum Stats {
 
     /// Sessions started in each hour of `hours` (e.g. 8..<18). Approximate: whole
     /// sessions are counted by their start hour until per-block times are logged.
-    static func startsByHour(_ records: [SessionRecord], since: Date, nameKey: String?,
-                             hours: Range<Int>, calendar: Calendar = .current) -> [Int] {
-        var counts = [Int](repeating: 0, count: hours.count)
-        for record in Self.records(records, since: since, nameKey: nameKey) {
-            let hour = calendar.component(.hour, from: record.startedAt)
-            if hours.contains(hour) { counts[hour - hours.lowerBound] += 1 }
+    /// Focus seconds in each hour of the day, from the logged focus blocks. A block that
+    /// crosses an hour boundary is split between both hours. Sessions saved before block
+    /// logging have no blocks, so their focus time goes to the hour they started.
+    static func focusByHour(_ records: [SessionRecord], since: Date, nameKey: String?,
+                            hours: Range<Int>, calendar: Calendar = .current) -> [TimeInterval] {
+        var totals = [TimeInterval](repeating: 0, count: hours.count)
+        func add(_ seconds: TimeInterval, at date: Date) {
+            let hour = calendar.component(.hour, from: date)
+            if hours.contains(hour) { totals[hour - hours.lowerBound] += seconds }
         }
-        return counts
+        for record in Self.records(records, since: since, nameKey: nameKey) {
+            let focus = record.blocks.filter { $0.kind == .focus }
+            guard !focus.isEmpty else {
+                add(record.focusSeconds, at: record.startedAt)
+                continue
+            }
+            for block in focus {
+                var cursor = block.start
+                while cursor < block.end {
+                    let hourStart = calendar.dateInterval(of: .hour, for: cursor)?.start ?? cursor
+                    let nextHour = calendar.date(byAdding: .hour, value: 1, to: hourStart) ?? block.end
+                    let pieceEnd = min(nextHour, block.end)
+                    add(pieceEnd.timeIntervalSince(cursor), at: cursor)
+                    cursor = pieceEnd
+                }
+            }
+        }
+        return totals
     }
 
     /// Totals per session name since `since`, largest first.

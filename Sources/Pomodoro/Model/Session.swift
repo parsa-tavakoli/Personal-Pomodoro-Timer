@@ -43,7 +43,7 @@ struct SessionConfig: Codable, Equatable {
 
 /// One small timing inside a session.
 struct Block: Equatable {
-    enum Kind: String {
+    enum Kind: String, Codable {
         case focus = "Focus"
         case shortBreak = "Short Break"
         case longBreak = "Long Break"
@@ -90,6 +90,8 @@ struct SessionRecord: Codable, Identifiable {
     let finished: Bool
     /// Name of the big session; empty when you didn't give one.
     var name: String = ""
+    /// What actually happened, block by block (empty for sessions saved before block logging).
+    var blocks: [LoggedBlock] = []
 
     var displayName: String { name.isEmpty ? "Untitled session" : name }
 }
@@ -107,5 +109,13 @@ extension SessionRecord {
         focusSeconds = try c.decode(TimeInterval.self, forKey: .focusSeconds)
         finished = try c.decode(Bool.self, forKey: .finished)
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        blocks = try c.decodeIfPresent([LoggedBlock].self, forKey: .blocks) ?? []
     }
+}
+
+/// A stretch of time the timer actually ran in one block (pauses split a block into several).
+struct LoggedBlock: Codable, Equatable {
+    let start: Date
+    let end: Date
+    let kind: Block.Kind
 }
