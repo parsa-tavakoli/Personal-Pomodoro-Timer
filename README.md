@@ -4,12 +4,24 @@ A calm focus timer for your Mac. Work in pomodoros, take breaks, and see where y
 
 <p align="center"><img src="Resources/logo.png" width="160" alt="Pomodoro app icon"></p>
 
-- **Focus sessions:** a fixed number of pomodoros, or a flexible session that grows one pomodoro at a time
-- **Overtime:** in flexible mode, the timer keeps counting past zero until you choose a short break, a long break, or to stop
-- **Name what you're working on:** sessions are grouped by name in your stats
-- **History and Stats:** a week view, a daily chart with a goal line, your most focused hours, and time per task
-- **Menu bar timer:** the time is always visible at the top of your screen
-- **Notifications** when a timer finishes
+## Features
+
+- **Two kinds of session:** a *fixed* number of pomodoros with automatic breaks, or a *flexible* session that grows one pomodoro at a time.
+- **Overtime:** in flexible mode, a finished timer keeps counting (+00:42…) until you choose a short break, a long break, or to stop.
+- **Name what you're working on:** your stats are grouped by these names.
+- **History:**
+  - a week strip;
+  - a **day timeline** showing every focus block and break, hour by hour;
+  - a list of the day's sessions, where you can rename them.
+- **Stats:**
+  - focus time, sessions and your streak;
+  - pomodoros per day, Monday to Sunday, with a daily goal line;
+  - your most focused hours, across all 24 hours;
+  - time per task.
+- **Menu bar timer:** just the time, always visible at the top of your screen.
+- **Notifications** when a timer finishes. Only the latest one is kept, so they don't pile up.
+- **Update notice:** Pomodoro tells you when a new version is out.
+- **Dark design** with Liquid Glass controls.
 
 ## Requirements
 
@@ -40,6 +52,19 @@ Pomodoro opens. From now on it opens normally, like any other app.
 
 When Pomodoro asks to send notifications, click **Allow**, so it can tell you when a timer finishes.
 
+## Update
+
+When a new version is out, Pomodoro shows **"Version … is available · Download"** at the top of the Timer page (and in the menu bar menu). To update:
+
+1. Finish or end any running session, then quit Pomodoro (click the time in the menu bar → **Quit**).
+2. Click **Download** (or get the newest `.dmg` from the [Releases page](https://github.com/parsa-tavakoli/Personal-Pomodoro-Timer/releases/latest)) and open it.
+3. Drag Pomodoro onto Applications and choose **Replace**.
+4. Open it. As with the first install, macOS asks once more, so use **Open Anyway** again.
+
+Your history and settings aren't stored inside the app, so they carry over to the new version.
+
+*Versions before 1.0.4 don't have the update notice. If you're on one of those, download the latest version once by hand.*
+
 ## Privacy
 
 Everything stays on your Mac. The only time Pomodoro goes online is to check this page for a newer version (once at launch and once a day); it sends nothing about you or your sessions.
@@ -57,19 +82,30 @@ Drag **Pomodoro** from Applications to the Trash. To also delete your history, r
 You need the Xcode Command Line Tools (`xcode-select --install`) with the macOS 26 SDK.
 
 ```bash
-./scripts/bundle.sh          # builds a universal Pomodoro.app
+./scripts/bundle.sh          # builds a universal Pomodoro.app (Apple Silicon + Intel)
 open Pomodoro.app
 ./scripts/make_dmg.sh        # packs it into dist/Pomodoro-<version>.dmg
 ```
+
+The version number comes from the latest git tag (for example `v1.0.4` gives `1.0.4`). To override it, use `VERSION=1.2.0 ./scripts/bundle.sh`. App icon: `swift scripts/make_icon.swift --full-bleed Resources/logo.png Resources/AppIcon.icns`.
+
+The code lives in `Sources/Pomodoro`:
+- `SessionTimer.swift`: the timer engine and block log;
+- `Stats.swift`: the numbers behind the Stats page;
+- `UpdateChecker.swift`: the release check;
+- `Theme.swift`: colours, fonts and spacing;
+- `Views/`: the screens.
 
 ### Publish a release
 
 Push a version tag. GitHub Actions ([release.yml](.github/workflows/release.yml)) builds the `.dmg` and publishes a GitHub Release with it:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.0.5
+git push origin v1.0.5
 ```
+
+Everyone on 1.0.4 or later then sees the update notice within a day.
 
 To try the build without publishing, run the **Release** workflow by hand from the *Actions* tab; the `.dmg` appears under the run's *Artifacts*.
 
