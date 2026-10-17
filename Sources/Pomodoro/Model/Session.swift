@@ -92,6 +92,8 @@ struct SessionRecord: Codable, Identifiable {
     var name: String = ""
     /// What actually happened, block by block (empty for sessions saved before block logging).
     var blocks: [LoggedBlock] = []
+    /// The project this session belongs to, if any.
+    var projectID: UUID?
 
     var displayName: String { name.isEmpty ? "Untitled session" : name }
 }
@@ -110,6 +112,7 @@ extension SessionRecord {
         finished = try c.decode(Bool.self, forKey: .finished)
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
         blocks = try c.decodeIfPresent([LoggedBlock].self, forKey: .blocks) ?? []
+        projectID = try c.decodeIfPresent(UUID.self, forKey: .projectID)
     }
 }
 

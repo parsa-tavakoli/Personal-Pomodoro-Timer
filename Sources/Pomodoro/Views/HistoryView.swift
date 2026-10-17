@@ -54,6 +54,12 @@ struct HistoryView: View {
                         ForEach(dayRecords) { record in
                             HistoryRow(record: record)
                                 .contextMenu {
+                                    Menu("Project") {
+                                        ProjectMenuItems(selection: Binding(
+                                            get: { history.records.first { $0.id == record.id }?.projectID },
+                                            set: { history.setProject(record.id, to: $0) }))
+                                    }
+                                    Divider()
                                     Button("Delete", role: .destructive) { history.delete(record) }
                                 }
                         }
@@ -135,8 +141,6 @@ private struct DayTotalRow: View {
         let focus = records.reduce(0) { $0 + $1.focusSeconds }
         HStack(spacing: 6) {
             swatch(Theme.Palette.accent, "Focus")
-            swatch(Theme.Palette.breakColor, "Break")
-                .padding(.leading, 6)
             Spacer()
             Text("**\(records.count)** session\(records.count == 1 ? "" : "s") · \(formatDuration(focus))")
         }
@@ -156,6 +160,7 @@ private struct DayTotalRow: View {
 
 private struct HistoryRow: View {
     @EnvironmentObject private var history: HistoryStore
+    @EnvironmentObject private var projects: ProjectStore
     let record: SessionRecord
 
     private var name: Binding<String> {
@@ -176,13 +181,19 @@ private struct HistoryRow: View {
                     .lineLimit(1)
                     .help("Click to rename")
                 HStack(spacing: 5) {
+                    let project = projects.project(record.projectID)
                     ForEach(0..<pipTotal, id: \.self) { i in
-                        Pip(state: i < record.completedPomodoros ? .done : .upcoming)
+                        Pip(state: i < record.completedPomodoros ? .done : .upcoming,
+                            color: project?.color ?? Theme.Palette.accent)
                     }
                     Text(pipLabel)
                         .font(Theme.Fonts.body(12))
                         .foregroundStyle(Theme.Palette.textMuted)
                         .padding(.leading, 3)
+                    if let project {
+                        ProjectTag(project: project)
+                            .padding(.leading, 4)
+                    }
                 }
             }
             Spacer(minLength: 0)
@@ -209,5 +220,20 @@ private struct HistoryRow: View {
         record.config.mode == .flexible
             ? "\(record.completedPomodoros)"
             : "\(record.completedPomodoros)/\(record.config.totalPomodoros)"
+    }
+}
+
+/// Small coloured project label, e.g. "● Thesis".
+struct ProjectTag: View {
+    let project: Project
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle().fill(project.color).frame(width: 6, height: 6)
+            Text(project.name)
+                .lineLimit(1)
+        }
+        .font(Theme.Fonts.body(11))
+        .foregroundStyle(Theme.Palette.textMuted)
     }
 }

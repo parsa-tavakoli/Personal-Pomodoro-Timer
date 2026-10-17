@@ -13,6 +13,17 @@ struct NameTotal: Identifiable {
     let displayName: String
     let seconds: TimeInterval
     let sessions: Int
+    /// Project of the most recent session with this name.
+    var projectID: UUID?
+    var id: String { key }
+}
+
+struct ProjectTotal: Identifiable {
+    /// A project's ID, or "none" for sessions without a project.
+    let key: String
+    let project: Project?
+    let seconds: TimeInterval
+    let sessions: Int
     var id: String { key }
 }
 
@@ -103,18 +114,42 @@ enum Stats {
 
     /// Totals per session name since `since`, largest first.
     static func byName(_ records: [SessionRecord], since: Date) -> [NameTotal] {
-        var groups: [String: (name: String, seconds: TimeInterval, sessions: Int)] = [:]
+        var groups: [String: (name: String, seconds: TimeInterval, sessions: Int, project: UUID?)] = [:]
         // Newest first, so the first spelling seen for a key is the most recent one.
         for record in Self.records(records, since: since, nameKey: nil).sorted(by: { $0.startedAt > $1.startedAt }) {
             let k = key(for: record.name)
-            var group = groups[k] ?? (record.displayName.trimmingCharacters(in: .whitespacesAndNewlines), 0, 0)
+            var group = groups[k] ?? (record.displayName.trimmingCharacters(in: .whitespacesAndNewlines), 0, 0, record.projectID)
             group.seconds += record.focusSeconds
             group.sessions += 1
             groups[k] = group
         }
         return groups
-            .map { NameTotal(key: $0.key, displayName: $0.value.name, seconds: $0.value.seconds, sessions: $0.value.sessions) }
+            .map { NameTotal(key: $0.key, displayName: $0.value.name, seconds: $0.value.seconds,
+                             sessions: $0.value.sessions, projectID: $0.value.project) }
             .sorted { $0.seconds != $1.seconds ? $0.seconds > $1.seconds : $0.displayName < $1.displayName }
+    }
+}
+
+extension Stats {
+    /// Grouping key for a session's project; a deleted project counts as "none".
+    static func projectKey(_ record: SessionRecord, in projects: [Project]) -> String {
+        guard let id = record.projectID, projects.contains(where: { $0.id == id }) else { return "none" }
+        return id.uuidString
+    }
+
+    /// Focus time per project since `since`, largest first ("No project" included when used).
+    static func byProject(_ records: [SessionRecord], since: Date, projects: [Project]) -> [ProjectTotal] {
+        var groups: [String: (seconds: TimeInterval, sessions: Int)] = [:]
+        for record in Self.records(records, since: since, nameKey: nil) {
+            groups[projectKey(record, in: projects), default: (0, 0)].seconds += record.focusSeconds
+            groups[projectKey(record, in: projects), default: (0, 0)].sessions += 1
+        }
+        return groups
+            .map { key, value in
+                ProjectTotal(key: key, project: projects.first { $0.id.uuidString == key },
+                             seconds: value.seconds, sessions: value.sessions)
+            }
+            .sorted { $0.seconds != $1.seconds ? $0.seconds > $1.seconds : $0.key < $1.key }
     }
 }
 

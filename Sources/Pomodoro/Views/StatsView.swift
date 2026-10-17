@@ -15,18 +15,31 @@ struct StatsView: View {
     private static let hours = 0..<24
 
     @EnvironmentObject private var history: HistoryStore
+    @EnvironmentObject private var projects: ProjectStore
     // @AppStorage rather than @State (no SwiftUI macro plugin with the Command Line Tools).
     @AppStorage("statsRange") private var range: Range = .week
     @AppStorage("statsName") private var selectedKey = ""
+    /// Selected project: a project ID, "none" for sessions without one, or "" for all.
+    @AppStorage("statsProject") private var selectedProject = ""
+
+    /// Bars and cells use the selected project's colour; otherwise the focus accent.
+    private var barColor: Color {
+        projects.projects.first { $0.id.uuidString == selectedProject }?.color ?? Theme.Palette.accent
+    }
 
     var body: some View {
         // Week = this calendar week, Monday first; Month = the last 30 days.
         let days = range == .week ? Stats.currentWeek() : Stats.days(range.rawValue)
         let since = days.first ?? Date()
-        let names = Stats.byName(history.records, since: since)
-        // Ignore a remembered name that has no sessions in this range.
+        let projectTotals = Stats.byProject(history.records, since: since, projects: projects.projects)
+        // Ignore a remembered project or name that has no sessions in this range.
+        let activeProject = projectTotals.first { $0.key == selectedProject }
+        // A selected project narrows every number on the page; a selected task narrows further.
+        let scoped = activeProject == nil ? history.records
+            : history.records.filter { Stats.projectKey($0, in: projects.projects) == activeProject!.key }
+        let names = Stats.byName(scoped, since: since)
         let active = names.first { $0.key == selectedKey }
-        let records = Stats.records(history.records, since: since, nameKey: active?.key)
+        let records = Stats.records(scoped, since: since, nameKey: active?.key)
 
         VStack(alignment: .leading, spacing: Theme.Space.m) {
             HStack {
@@ -52,15 +65,18 @@ struct StatsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: Theme.Space.s) {
                         kpis(records)
-                        if let active {
-                            filterBanner(active)
+                        if activeProject != nil || active != nil {
+                            filterBanner(project: activeProject, task: active)
                         }
                         card("Pomodoros per day") {
-                            chart(Stats.daily(history.records, days: days, nameKey: active?.key))
+                            chart(Stats.daily(scoped, days: days, nameKey: active?.key))
                         }
                         card("Most focused hours") {
-                            hoursRow(Stats.focusByHour(history.records, since: since,
+                            hoursRow(Stats.focusByHour(scoped, since: since,
                                                         nameKey: active?.key, hours: Self.hours))
+                        }
+                        card("By project") {
+                            projectList(projectTotals)
                         }
                         card("By task") {
                             nameList(names)
@@ -85,13 +101,14 @@ struct StatsView: View {
         }
     }
 
-    private func filterBanner(_ active: NameTotal) -> some View {
-        HStack {
-            Circle().fill(Theme.Palette.accent).frame(width: 8, height: 8)
-            Text("Showing \(active.displayName)")
+    private func filterBanner(project: ProjectTotal?, task: NameTotal?) -> some View {
+        let parts = [project.map { $0.project?.name ?? "No project" }, task?.displayName].compactMap { $0 }
+        return HStack {
+            Circle().fill(barColor).frame(width: 8, height: 8)
+            Text("Showing \(parts.joined(separator: " · "))")
                 .lineLimit(1)
             Spacer()
-            Button("Show all") { selectedKey = "" }
+            Button("Show all") { selectedKey = ""; selectedProject = "" }
                 .buttonStyle(.link)
                 .tint(Theme.Palette.accent)
         }
@@ -120,7 +137,7 @@ struct StatsView: View {
                     x: .value("Day", day.date, unit: .day),
                     y: .value("Pomodoros", day.pomodoros)
                 )
-                .foregroundStyle(Theme.Palette.accent.opacity(day.date == today ? 1 : 0.55))
+                .foregroundStyle(barColor.opacity(day.date == today ? 1 : 0.55))
                 .cornerRadius(3)
                 .annotation(position: .top, spacing: 2) {
                     if range == .week && day.pomodoros > 0 {
@@ -171,7 +188,7 @@ struct StatsView: View {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(focus < 60
                               ? Theme.Palette.divider
-                              : Theme.Palette.accent.opacity(0.2 + 0.8 * focus / most))
+                              : barColor.opacity(0.2 + 0.8 * focus / most))
                         .frame(height: 32)
                         .help(String(format: "%02d:00–%02d:00 · ", hour, hour + 1)
                               + (focus < 60 ? "no focus" : "\(formatDuration(focus)) focus"))
@@ -200,6 +217,32 @@ struct StatsView: View {
         return String(format: "%02d:00, ", Self.hours.lowerBound + i) + "\(formatDuration(seconds[i])) of focus"
     }
 
+    private func projectList(_ totals: [ProjectTotal]) -> some View {
+        let top = max(1, totals.first?.seconds ?? 1)
+        return VStack(spacing: Theme.Space.s) {
+            ForEach(totals) { total in
+                Button {
+                    selectedProject = selectedProject == total.key ? "" : total.key
+                    selectedKey = ""
+                } label: {
+                    // "No project" in a light grey that stays visible on the dark track.
+                    ProgressRow(dot: total.project?.color ?? Theme.Palette.textFaint,
+                                name: total.project?.name ?? "No project",
+                                bar: total.project?.color ?? Theme.Palette.textFaint,
+                                share: total.seconds / top, seconds: total.seconds,
+                                isSelected: total.key == selectedProject)
+                }
+                .buttonStyle(.plain)
+            }
+            if projects.projects.isEmpty {
+                Text("Add projects from the dot in \"What are you working on?\" or in Settings.")
+                    .font(Theme.Fonts.body(11))
+                    .foregroundStyle(Theme.Palette.textFaint)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
     private func nameList(_ names: [NameTotal]) -> some View {
         let top = max(1, names.first?.seconds ?? 1)
         return VStack(spacing: Theme.Space.s) {
@@ -207,7 +250,10 @@ struct StatsView: View {
                 Button {
                     selectedKey = selectedKey == item.key ? "" : item.key
                 } label: {
-                    TaskBar(item: item, share: item.seconds / top, isSelected: item.key == selectedKey)
+                    ProgressRow(dot: projects.project(item.projectID)?.color,
+                                name: item.displayName, bar: barColor,
+                                share: item.seconds / top, seconds: item.seconds,
+                                isSelected: item.key == selectedKey)
                 }
                 .buttonStyle(.plain)
             }
@@ -236,35 +282,43 @@ private struct KPITile: View {
     }
 }
 
-/// "By task" row: name, a bar scaled to the top task, and its time.
-private struct TaskBar: View {
-    let item: NameTotal
+/// A "By project" / "By task" row: optional colour dot, name, a bar scaled to the top row, time.
+private struct ProgressRow: View {
+    let dot: Color?
+    let name: String
+    let bar: Color
     let share: Double
+    let seconds: TimeInterval
     let isSelected: Bool
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
-            Text(item.displayName)
-                .font(Theme.Fonts.body(12, isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? Theme.Palette.textPrimary : Theme.Palette.textMuted)
-                .lineLimit(1)
-                .frame(width: 96, alignment: .leading)
+            HStack(spacing: 5) {
+                if let dot {
+                    Circle().fill(dot).frame(width: 7, height: 7)
+                }
+                Text(name)
+                    .font(Theme.Fonts.body(12, isSelected ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? Theme.Palette.textPrimary : Theme.Palette.textMuted)
+                    .lineLimit(1)
+            }
+            .frame(width: 104, alignment: .leading)
             Capsule()
                 .fill(Theme.Palette.stroke)
                 .frame(height: 8)
                 .overlay(alignment: .leading) {
                     GeometryReader { geo in
                         Capsule()
-                            .fill(Theme.Palette.accent)
+                            .fill(bar)
                             .frame(width: max(8, geo.size.width * share))
                     }
                 }
-            Text(formatDuration(item.seconds))
+            Text(formatDuration(seconds))
                 .font(Theme.Fonts.mono(12))
                 .frame(width: 56, alignment: .trailing)
         }
         .frame(minHeight: 22)
         .contentShape(Rectangle())
-        .help(isSelected ? "Click to show all" : "Click to show only \(item.displayName)")
+        .help(isSelected ? "Click to show all" : "Click to show only \(name)")
     }
 }

@@ -8,6 +8,8 @@ struct DayTimeline: View {
     let records: [SessionRecord]
 
     @EnvironmentObject private var timer: SessionTimer
+    @EnvironmentObject private var projects: ProjectStore
+    @EnvironmentObject private var history: HistoryStore
 
     private let hourHeight: CGFloat = 64
     private let barInset: CGFloat = 48
@@ -24,6 +26,9 @@ struct DayTimeline: View {
         var approximate = false
         /// Part of the session that's running right now.
         var live = false
+        /// The saved session this bar belongs to (nil while live).
+        var recordID: UUID?
+        var projectID: UUID?
     }
 
     var body: some View {
@@ -63,11 +68,14 @@ struct DayTimeline: View {
             let name = record.displayName
             if record.blocks.isEmpty {
                 bars.append(Bar(id: "\(record.id)", start: record.startedAt, end: record.endedAt,
-                                kind: .focus, label: name, approximate: true))
+                                kind: .focus, label: name, approximate: true,
+                                recordID: record.id, projectID: record.projectID))
             } else {
-                for (i, block) in record.blocks.enumerated() {
+                // Break blocks saved by 1.0.4 are skipped: breaks aren't tracked any more.
+                for (i, block) in record.blocks.enumerated() where block.kind == .focus {
                     bars.append(Bar(id: "\(record.id)-\(i)", start: block.start, end: block.end,
-                                    kind: block.kind, label: block.kind == .focus ? name : ""))
+                                    kind: block.kind, label: block.kind == .focus ? name : "",
+                                    recordID: record.id, projectID: record.projectID))
                 }
             }
         }
@@ -76,7 +84,8 @@ struct DayTimeline: View {
             let name = timer.sessionName.trimmingCharacters(in: .whitespacesAndNewlines)
             for (i, block) in timer.liveBlocks(now: now).enumerated() {
                 bars.append(Bar(id: "live-\(i)", start: block.start, end: block.end, kind: block.kind,
-                                label: block.kind == .focus ? (name.isEmpty ? "Now" : name) : "", live: true))
+                                label: block.kind == .focus ? (name.isEmpty ? "Now" : name) : "", live: true,
+                                projectID: timer.projectID))
             }
         }
         return bars.sorted { $0.start < $1.start }
@@ -126,7 +135,8 @@ struct DayTimeline: View {
     private func barView(_ bar: Bar, range: Range<Int>) -> some View {
         let top = y(bar.start, range: range)
         let height = max(3, y(bar.end, range: range) - top)
-        let color = bar.kind == .focus ? Theme.Palette.accent : Theme.Palette.breakColor.opacity(0.85)
+        // Focus bars take their project's colour (breaks aren't drawn).
+        let color = projects.project(bar.projectID)?.color ?? Theme.Palette.accent
         let shape = RoundedRectangle(cornerRadius: Theme.Radius.bar, style: .continuous)
 
         ZStack(alignment: .topLeading) {
@@ -150,6 +160,15 @@ struct DayTimeline: View {
         .padding(.leading, barInset)
         .offset(y: top)
         .help(tooltip(bar))
+        .contextMenu {
+            if let recordID = bar.recordID {
+                Menu("Project") {
+                    ProjectMenuItems(selection: Binding(
+                        get: { history.records.first { $0.id == recordID }?.projectID },
+                        set: { history.setProject(recordID, to: $0) }))
+                }
+            }
+        }
     }
 
     private func nowLine(_ now: Date, range: Range<Int>) -> some View {
@@ -169,10 +188,11 @@ struct DayTimeline: View {
     // MARK: - Helpers
 
     private func tooltip(_ bar: Bar) -> String {
-        let kind = bar.kind == .focus ? "Focus" : (bar.kind == .shortBreak ? "Short break" : "Long break")
+        let kind = "Focus"
         let time = "\(bar.start.formatted(date: .omitted, time: .shortened))–\(bar.end.formatted(date: .omitted, time: .shortened))"
         var parts = [kind, time]
         if !bar.label.isEmpty { parts.append(bar.label) }
+        if let project = projects.project(bar.projectID) { parts.append(project.name) }
         if bar.approximate { parts.append("times approximate") }
         if bar.live { parts.append("in progress") }
         return parts.joined(separator: " · ")
@@ -185,8 +205,7 @@ struct DayTimeline: View {
     }
 
     private func summary(_ bars: [Bar]) -> String {
-        let focus = bars.filter { $0.kind == .focus }.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
-        let breaks = bars.filter { $0.kind != .focus }.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
-        return "Day timeline: \(formatDuration(focus)) focus and \(formatDuration(breaks)) of breaks."
+        let focus = bars.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
+        return "Day timeline: \(formatDuration(focus)) of focus."
     }
 }

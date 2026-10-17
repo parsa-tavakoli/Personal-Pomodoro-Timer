@@ -37,6 +37,12 @@ final class HistoryStore: ObservableObject {
         save()
     }
 
+    func setProject(_ id: UUID, to projectID: UUID?) {
+        guard let i = records.firstIndex(where: { $0.id == id }) else { return }
+        records[i].projectID = projectID
+        save()
+    }
+
     /// Total focus seconds for sessions started on or after `date`.
     func focusSeconds(since date: Date) -> TimeInterval {
         records.filter { $0.startedAt >= date }.reduce(0) { $0 + $1.focusSeconds }

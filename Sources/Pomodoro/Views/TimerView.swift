@@ -93,14 +93,34 @@ private struct ModeChips: View {
 /// The spec's current-task picker. Until Tasks exists it edits the session name.
 private struct TaskPill: View {
     @EnvironmentObject private var timer: SessionTimer
+    @EnvironmentObject private var projects: ProjectStore
 
     var body: some View {
+        let project = projects.project(timer.projectID)
         HStack(spacing: Theme.Space.s) {
-            Circle()
-                .fill(timer.accentColor)
-                .frame(width: 8, height: 8)
+            ProjectMenu(selection: $timer.projectID) {
+                // The dot is the menu: the project's colour, or the phase colour with no project.
+                Circle()
+                    .fill(project?.color ?? timer.accentColor)
+                    .frame(width: 10, height: 10)
+                    .overlay {
+                        if project == nil {
+                            Circle().strokeBorder(Theme.Palette.background.opacity(0.6), lineWidth: 2)
+                        }
+                    }
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .help(project.map { "Project: \($0.name)" } ?? "Choose a project")
             SessionNameField(text: $timer.sessionName, placeholder: "What are you working on?")
                 .font(Theme.Fonts.body(14, .medium))
+            if let project {
+                Text(project.name)
+                    .font(Theme.Fonts.body(12))
+                    .foregroundStyle(Theme.Palette.textMuted)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
         }
         .padding(.horizontal, Theme.Space.m)
         .frame(height: 40)

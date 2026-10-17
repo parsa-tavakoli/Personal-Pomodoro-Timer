@@ -34,6 +34,10 @@ final class SessionTimer: ObservableObject {
     }
     /// Optional name for the big session; editable before and during it.
     @Published var sessionName = ""
+    /// Project for the session. Kept after a session ends, since the next one is often the same.
+    @Published var projectID: UUID? = UserDefaults.standard.string(forKey: "currentProject").flatMap(UUID.init) {
+        didSet { UserDefaults.standard.set(projectID?.uuidString, forKey: "currentProject") }
+    }
 
     private let history: HistoryStore
     private var endDate: Date?
@@ -93,10 +97,10 @@ final class SessionTimer: ObservableObject {
         return isFlexible ? "Pomodoro \(n)" : "Pomodoro \(n) of \(sessionConfig.totalPomodoros)"
     }
 
-    /// The running session's blocks so far, including the segment in progress.
+    /// The running session's focus blocks so far, including one in progress.
     func liveBlocks(now: Date = Date()) -> [LoggedBlock] {
-        guard let segmentStart, let kind = currentBlock?.kind else { return blockLog }
-        return blockLog + [LoggedBlock(start: segmentStart, end: now, kind: kind)]
+        guard let segmentStart, currentBlock?.kind == .focus else { return blockLog }
+        return blockLog + [LoggedBlock(start: segmentStart, end: now, kind: .focus)]
     }
 
     var sessionStartedAt: Date? { sessionStart }
@@ -210,7 +214,8 @@ final class SessionTimer: ObservableObject {
     private func closeSegment() {
         guard let start = segmentStart else { return }
         segmentStart = nil
-        guard let kind = currentBlock?.kind else { return }
+        // Only focus is logged; breaks aren't tracked (they show as gaps on the timeline).
+        guard let kind = currentBlock?.kind, kind == .focus else { return }
         let end = Date()
         if end.timeIntervalSince(start) >= 1 {
             blockLog.append(LoggedBlock(start: start, end: end, kind: kind))
@@ -311,7 +316,8 @@ final class SessionTimer: ObservableObject {
                 focusSeconds: focusSeconds,
                 finished: finished,
                 name: sessionName.trimmingCharacters(in: .whitespacesAndNewlines),
-                blocks: blockLog
+                blocks: blockLog,
+                projectID: projectID
             ))
         }
         // Cleared here, not in reset(): start() resets, and must keep a name typed beforehand.
