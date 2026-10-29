@@ -35,12 +35,17 @@ enum Stats {
         return trimmed.isEmpty ? "untitled" : trimmed
     }
 
-    /// Monday to Sunday of the current week (always Monday-first, whatever the region).
-    static func currentWeek(calendar: Calendar = .current) -> [Date] {
+    /// Monday to Sunday of the week containing `date` (always Monday-first, whatever the region).
+    static func week(containing date: Date, calendar: Calendar = .current) -> [Date] {
         var cal = calendar
         cal.firstWeekday = 2
-        let start = cal.dateInterval(of: .weekOfYear, for: Date())?.start ?? cal.startOfDay(for: Date())
+        let start = cal.dateInterval(of: .weekOfYear, for: date)?.start ?? cal.startOfDay(for: date)
         return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: start) }
+    }
+
+    /// Monday to Sunday of this week.
+    static func currentWeek(calendar: Calendar = .current) -> [Date] {
+        week(containing: Date(), calendar: calendar)
     }
 
     /// Start of each of the last `count` days, oldest first, ending today.

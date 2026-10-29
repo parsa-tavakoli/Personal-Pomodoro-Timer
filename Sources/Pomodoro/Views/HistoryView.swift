@@ -4,6 +4,26 @@ import SwiftUI
 /// because @State needs a SwiftUI macro plugin the Command Line Tools don't ship.
 final class HistorySelection: ObservableObject {
     @Published var day = Calendar.current.startOfDay(for: Date())
+    /// Monday of the week the strip shows.
+    @Published private(set) var weekStart = Stats.currentWeek().first ?? Calendar.current.startOfDay(for: Date())
+
+    var days: [Date] { Stats.week(containing: weekStart) }
+    var isCurrentWeek: Bool { weekStart == Stats.currentWeek().first }
+
+    /// Moves the strip by whole weeks; selects that week's Monday (or today on this week).
+    func moveWeek(by weeks: Int) {
+        guard let start = Calendar.current.date(byAdding: .weekOfYear, value: weeks, to: weekStart),
+              let monday = Stats.week(containing: start).first else { return }
+        let today = Calendar.current.startOfDay(for: Date())
+        guard monday <= today else { return }
+        weekStart = monday
+        day = isCurrentWeek ? today : monday
+    }
+
+    func goToToday() {
+        weekStart = Stats.currentWeek().first ?? weekStart
+        day = Calendar.current.startOfDay(for: Date())
+    }
 }
 
 struct HistoryView: View {
@@ -36,6 +56,8 @@ struct HistoryView: View {
                 .fixedSize()
                 .tint(Theme.Palette.inactive)
             }
+
+            WeekNavigator(selection: selection)
 
             WeekStrip(selection: selection)
 
@@ -127,9 +149,57 @@ private struct WeekStrip: View {
         }
     }
 
-    private var weekDays: [Date] {
-        let start = calendar.dateInterval(of: .weekOfYear, for: Date())?.start ?? calendar.startOfDay(for: Date())
-        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
+    private var weekDays: [Date] { selection.days }
+}
+
+/// ‹ week range › row above the strip, with a Today button when browsing older weeks.
+private struct WeekNavigator: View {
+    @ObservedObject var selection: HistorySelection
+
+    var body: some View {
+        HStack(spacing: Theme.Space.s) {
+            arrow("chevron.left", label: "Previous week") { selection.moveWeek(by: -1) }
+            Spacer(minLength: 0)
+            Text(selection.isCurrentWeek ? "This week" : rangeText)
+                .font(Theme.Fonts.body(13, .medium))
+                .foregroundStyle(Theme.Palette.textMuted)
+            if !selection.isCurrentWeek {
+                Button("Today") { selection.goToToday() }
+                    .buttonStyle(.plain)
+                    .font(Theme.Fonts.body(12, .semibold))
+                    .foregroundStyle(Theme.Palette.accent)
+                    .padding(.leading, 4)
+            }
+            Spacer(minLength: 0)
+            arrow("chevron.right", label: "Next week") { selection.moveWeek(by: 1) }
+                .disabled(selection.isCurrentWeek)
+                .opacity(selection.isCurrentWeek ? 0.3 : 1)
+        }
+        .frame(height: 24)
+    }
+
+    /// "20–26 Oct 2026", or "27 Oct – 2 Nov 2026" across months.
+    private var rangeText: String {
+        guard let first = selection.days.first, let last = selection.days.last else { return "" }
+        let cal = Calendar.current
+        let end = last.formatted(.dateTime.day().month(.abbreviated).year())
+        if cal.isDate(first, equalTo: last, toGranularity: .month) {
+            return "\(first.formatted(.dateTime.day()))–\(end)"
+        }
+        return "\(first.formatted(.dateTime.day().month(.abbreviated))) – \(end)"
+    }
+
+    private func arrow(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.Palette.textPrimary)
+                .frame(width: 28, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .help(label)
     }
 }
 
