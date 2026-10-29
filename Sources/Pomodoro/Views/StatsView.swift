@@ -53,6 +53,9 @@ struct StatsView: View {
     /// Selected project: a project ID, "none" for sessions without one, or "" for all.
     @AppStorage("statsProject") private var selectedProject = ""
     @StateObject private var dayPick = StatsDaySelection()
+    @EnvironmentObject private var archive: TaskArchive
+    /// Archived projects and tasks are hidden from the lists unless this is on.
+    @AppStorage("statsShowArchived") private var showArchived = false
 
     /// Bars and cells use the selected project's colour; otherwise the focus accent.
     private var barColor: Color {
@@ -73,12 +76,14 @@ struct StatsView: View {
             : history.records
         let projectTotals = Stats.byProject(base, since: since, projects: projects.projects)
         // Ignore a remembered project or name that has no sessions in this range.
-        let activeProject = projectTotals.first { $0.key == selectedProject }
+        let shownProjects = showArchived ? projectTotals : projectTotals.filter { !($0.project?.archived ?? false) }
+        let activeProject = shownProjects.first { $0.key == selectedProject }
         // A selected project narrows every number on the page; a selected task narrows further.
         let scoped = activeProject == nil ? base
             : base.filter { Stats.projectKey($0, in: projects.projects) == activeProject!.key }
         let names = Stats.byName(scoped, since: since)
-        let active = names.first { $0.key == selectedKey }
+        let shownNames = showArchived ? names : names.filter { !archive.isArchived($0.key) }
+        let active = shownNames.first { $0.key == selectedKey }
         let records = Stats.records(scoped, since: since, nameKey: active?.key)
 
         VStack(alignment: .leading, spacing: Theme.Space.m) {
@@ -126,10 +131,10 @@ struct StatsView: View {
                                                         nameKey: active?.key, hours: Self.hours))
                         }
                         card("By project") {
-                            projectList(projectTotals)
+                            projectList(shownProjects, hidden: projectTotals.count - shownProjects.count)
                         }
                         card("By task") {
-                            nameList(names)
+                            nameList(shownNames, hidden: names.count - shownNames.count)
                         }
                     }
                 }
@@ -275,7 +280,7 @@ struct StatsView: View {
         return String(format: "%02d:00, ", Self.hours.lowerBound + i) + "\(formatDuration(seconds[i])) of focus"
     }
 
-    private func projectList(_ totals: [ProjectTotal]) -> some View {
+    private func projectList(_ totals: [ProjectTotal], hidden: Int) -> some View {
         let top = max(1, totals.first?.seconds ?? 1)
         return VStack(spacing: Theme.Space.s) {
             ForEach(totals) { total in
@@ -288,10 +293,23 @@ struct StatsView: View {
                                 name: total.project?.name ?? "No project",
                                 bar: total.project?.color ?? Theme.Palette.textFaint,
                                 share: total.seconds / top, seconds: total.seconds,
-                                isSelected: total.key == selectedProject)
+                                isSelected: total.key == selectedProject,
+                                archived: total.project?.archived ?? false)
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    // "No project" isn't a real project, so it has no menu.
+                    if let project = total.project {
+                        Button(project.archived ? "Unarchive Project" : "Archive Project") {
+                            projects.setArchived(project.id, !project.archived)
+                        }
+                        Button("Delete Project…") {
+                            ArchiveActions.deleteProject(project, projects: projects, history: history)
+                        }
+                    }
+                }
             }
+            archivedToggle(hidden: hidden)
             if projects.projects.isEmpty {
                 Text("Add projects from the dot in \"What are you working on?\" or in Settings.")
                     .font(Theme.Fonts.body(11))
@@ -301,20 +319,44 @@ struct StatsView: View {
         }
     }
 
-    private func nameList(_ names: [NameTotal]) -> some View {
+    private func nameList(_ names: [NameTotal], hidden: Int) -> some View {
         let top = max(1, names.first?.seconds ?? 1)
         return VStack(spacing: Theme.Space.s) {
             ForEach(names) { item in
+                let archived = archive.isArchived(item.key)
                 Button {
                     selectedKey = selectedKey == item.key ? "" : item.key
                 } label: {
                     ProgressRow(dot: projects.project(item.projectID)?.color,
                                 name: item.displayName, bar: barColor,
                                 share: item.seconds / top, seconds: item.seconds,
-                                isSelected: item.key == selectedKey)
+                                isSelected: item.key == selectedKey,
+                                archived: archived)
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    Button(archived ? "Unarchive Task" : "Archive Task") {
+                        archive.setArchived(item.key, !archived)
+                    }
+                    Button("Delete Task and Its Sessions…") {
+                        ArchiveActions.deleteTask(key: item.key, name: item.displayName,
+                                                  history: history, archive: archive)
+                    }
+                }
             }
+            archivedToggle(hidden: hidden)
+        }
+    }
+
+    /// "Show 2 archived" / "Hide archived" link under a list, when it has archived rows.
+    @ViewBuilder
+    private func archivedToggle(hidden: Int) -> some View {
+        if hidden > 0 || showArchived {
+            Button(showArchived ? "Hide archived" : "Show \(hidden) archived") { showArchived.toggle() }
+                .buttonStyle(.plain)
+                .font(Theme.Fonts.body(11, .medium))
+                .foregroundStyle(Theme.Palette.textMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -348,6 +390,7 @@ private struct ProgressRow: View {
     let share: Double
     let seconds: TimeInterval
     let isSelected: Bool
+    var archived = false
 
     var body: some View {
         HStack(spacing: Theme.Space.s) {
@@ -359,6 +402,12 @@ private struct ProgressRow: View {
                     .font(Theme.Fonts.body(12, isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? Theme.Palette.textPrimary : Theme.Palette.textMuted)
                     .lineLimit(1)
+                if archived {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: 9))
+                        .foregroundStyle(Theme.Palette.textFaint)
+                        .accessibilityLabel("Archived")
+                }
             }
             .frame(width: 104, alignment: .leading)
             Capsule()
@@ -376,7 +425,9 @@ private struct ProgressRow: View {
                 .frame(width: 56, alignment: .trailing)
         }
         .frame(minHeight: 22)
+        .opacity(archived ? 0.5 : 1)
         .contentShape(Rectangle())
-        .help(isSelected ? "Click to show all" : "Click to show only \(name)")
+        .help((archived ? "Archived · " : "") + (isSelected ? "Click to show all" : "Click to show only \(name)")
+              + " · Right-click to archive or delete")
     }
 }

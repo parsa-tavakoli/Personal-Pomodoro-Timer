@@ -7,6 +7,8 @@ struct Project: Codable, Identifiable, Equatable {
     var name: String
     /// Index into `Project.colors`.
     var colorIndex: Int
+    /// Archived projects leave the picker and Stats lists; their history is kept.
+    var archived = false
 
     var color: Color { Project.colors[colorIndex % Project.colors.count].color }
 
@@ -37,9 +39,29 @@ struct Project: Codable, Identifiable, Equatable {
 }
 
 /// Saves projects as JSON in Application Support, next to the history.
+extension Project {
+    init(id: UUID = UUID(), name: String, colorIndex: Int) {
+        self.id = id
+        self.name = name
+        self.colorIndex = colorIndex
+    }
+
+    // `archived` is missing in projects saved before archiving existed.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        colorIndex = try c.decode(Int.self, forKey: .colorIndex)
+        archived = try c.decodeIfPresent(Bool.self, forKey: .archived) ?? false
+    }
+}
+
 @MainActor
 final class ProjectStore: ObservableObject {
     @Published private(set) var projects: [Project] = []
+
+    var activeProjects: [Project] { projects.filter { !$0.archived } }
+    var archivedProjects: [Project] { projects.filter(\.archived) }
 
     private let fileURL: URL
 
@@ -76,6 +98,12 @@ final class ProjectStore: ObservableObject {
         save()
     }
 
+    func setArchived(_ id: UUID, _ archived: Bool) {
+        guard let i = projects.firstIndex(where: { $0.id == id }) else { return }
+        projects[i].archived = archived
+        save()
+    }
+
     func setColor(_ id: UUID, _ colorIndex: Int) {
         guard let i = projects.firstIndex(where: { $0.id == id }) else { return }
         projects[i].colorIndex = colorIndex
@@ -93,5 +121,34 @@ final class ProjectStore: ObservableObject {
         encoder.outputFormatting = [.prettyPrinted]
         guard let data = try? encoder.encode(projects) else { return }
         try? data.write(to: fileURL, options: .atomic)
+    }
+}
+
+/// Archived task names (as `Stats.key(for:)` keys, so spelling variants match).
+/// A task is just a session name, so this only records which names are hidden.
+@MainActor
+final class TaskArchive: ObservableObject {
+    @Published private(set) var keys: Set<String>
+
+    private static let defaultsKey = "archivedTasks"
+
+    init() {
+        keys = Set(UserDefaults.standard.stringArray(forKey: Self.defaultsKey) ?? [])
+    }
+
+    func isArchived(_ key: String) -> Bool { keys.contains(key) }
+
+    func setArchived(_ key: String, _ archived: Bool) {
+        if archived { keys.insert(key) } else { keys.remove(key) }
+        save()
+    }
+
+    func remove(_ key: String) {
+        keys.remove(key)
+        save()
+    }
+
+    private func save() {
+        UserDefaults.standard.set(keys.sorted(), forKey: Self.defaultsKey)
     }
 }

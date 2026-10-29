@@ -1,8 +1,20 @@
 import SwiftUI
 
+/// Settings window: General (timers) and Projects & Tasks (manage, archive, delete).
 struct SettingsView: View {
+    var body: some View {
+        TabView {
+            GeneralSettings()
+                .tabItem { Label("General", systemImage: "timer") }
+            ProjectsTasksSettings()
+                .tabItem { Label("Projects & Tasks", systemImage: "folder") }
+        }
+        .tint(Theme.Palette.accent)
+    }
+}
+
+private struct GeneralSettings: View {
     @EnvironmentObject private var timer: SessionTimer
-    @EnvironmentObject private var projects: ProjectStore
 
     var body: some View {
         Form {
@@ -30,19 +42,6 @@ struct SettingsView: View {
                 }
             }
             Section {
-                ForEach(projects.projects) { project in
-                    ProjectRow(project: project)
-                }
-                Button("Add Project") {
-                    projects.add(named: "Project \(projects.projects.count + 1)")
-                }
-            } header: {
-                Text("Projects")
-            } footer: {
-                Text("Group sessions such as \"Thesis\" or \"Work\". Only focus time counts towards a project.")
-                    .foregroundStyle(.secondary)
-            }
-            Section {
                 Button("Reset to defaults") { timer.config = SessionConfig() }
             } footer: {
                 if timer.state != .idle {
@@ -66,10 +65,121 @@ struct SettingsView: View {
     }
 }
 
-/// One project in Settings: colour menu, editable name, delete.
+/// Projects (active and archived) and every task name in your history.
+private struct ProjectsTasksSettings: View {
+    @EnvironmentObject private var projects: ProjectStore
+    @EnvironmentObject private var history: HistoryStore
+    @EnvironmentObject private var archive: TaskArchive
+
+    var body: some View {
+        let tasks = Stats.byName(history.records, since: .distantPast)
+        Form {
+            Section {
+                ForEach(projects.activeProjects) { project in
+                    ProjectRow(project: project)
+                }
+                Button("Add Project") {
+                    projects.add(named: "Project \(projects.projects.count + 1)")
+                }
+            } header: {
+                Text("Projects")
+            } footer: {
+                Text("Group sessions such as \"Thesis\" or \"Work\". Only focus time counts towards a project. Archived projects leave the picker and Stats lists; their history is kept.")
+                    .foregroundStyle(.secondary)
+            }
+            if !projects.archivedProjects.isEmpty {
+                Section("Archived projects") {
+                    ForEach(projects.archivedProjects) { project in
+                        ProjectRow(project: project)
+                    }
+                }
+            }
+            Section {
+                let active = tasks.filter { !archive.isArchived($0.key) }
+                if active.isEmpty {
+                    Text("Tasks are the names you type in \"What are you working on?\".")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(active) { TaskRow(task: $0) }
+            } header: {
+                Text("Tasks")
+            } footer: {
+                Text("Deleting a task deletes all of its sessions.")
+                    .foregroundStyle(.secondary)
+            }
+            let archived = tasks.filter { archive.isArchived($0.key) }
+            if !archived.isEmpty {
+                Section("Archived tasks") {
+                    ForEach(archived) { TaskRow(task: $0) }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(Theme.Palette.background)
+        .tint(Theme.Palette.accent)
+        .frame(width: 380, height: 420)
+    }
+}
+
+/// One task in Settings: name, sessions and focus, archive, delete.
+private struct TaskRow: View {
+    let task: NameTotal
+    @EnvironmentObject private var history: HistoryStore
+    @EnvironmentObject private var archive: TaskArchive
+
+    var body: some View {
+        let archived = archive.isArchived(task.key)
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.displayName)
+                    .lineLimit(1)
+                Text("\(task.sessions) session\(task.sessions == 1 ? "" : "s") · \(formatDuration(task.seconds))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            IconButton(archived ? "tray.and.arrow.up" : "archivebox",
+                       help: archived ? "Unarchive task" : "Archive task") {
+                archive.setArchived(task.key, !archived)
+            }
+            IconButton("trash", help: "Delete task and its sessions") {
+                ArchiveActions.deleteTask(key: task.key, name: task.displayName, history: history, archive: archive)
+            }
+        }
+    }
+}
+
+/// Small borderless icon button used in the Settings rows.
+private struct IconButton: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+
+    init(_ symbol: String, help: String, action: @escaping () -> Void) {
+        self.symbol = symbol
+        self.help = help
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// One project in Settings: colour menu, editable name, archive, delete.
 private struct ProjectRow: View {
     let project: Project
     @EnvironmentObject private var projects: ProjectStore
+    @EnvironmentObject private var history: HistoryStore
 
     private var name: Binding<String> {
         Binding(get: { project.name }, set: { projects.rename(project.id, to: $0) })
@@ -108,14 +218,13 @@ private struct ProjectRow: View {
                 .labelsHidden()
                 .multilineTextAlignment(.leading)
 
-            Button(role: .destructive) {
-                projects.delete(project.id)
-            } label: {
-                Image(systemName: "trash")
-                    .foregroundStyle(.secondary)
+            IconButton(project.archived ? "tray.and.arrow.up" : "archivebox",
+                       help: project.archived ? "Unarchive project" : "Archive project") {
+                projects.setArchived(project.id, !project.archived)
             }
-            .buttonStyle(.plain)
-            .help("Delete project (its sessions keep their history)")
+            IconButton("trash", help: "Delete project (its sessions stay as No project)") {
+                ArchiveActions.deleteProject(project, projects: projects, history: history)
+            }
         }
     }
 }

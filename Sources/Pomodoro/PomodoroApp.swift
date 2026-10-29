@@ -7,6 +7,7 @@ struct PomodoroApp: App {
     @StateObject private var timer: SessionTimer
     @StateObject private var updates = UpdateChecker()
     @StateObject private var projects = ProjectStore()
+    @StateObject private var taskArchive = TaskArchive()
 
     init() {
         let history = HistoryStore()
@@ -23,6 +24,7 @@ struct PomodoroApp: App {
                 .environmentObject(history)
                 .environmentObject(updates)
                 .environmentObject(projects)
+                .environmentObject(taskArchive)
                 .preferredColorScheme(.dark)
         }
         .windowResizability(.contentSize)
@@ -40,6 +42,8 @@ struct PomodoroApp: App {
             SettingsView()
                 .environmentObject(timer)
                 .environmentObject(projects)
+                .environmentObject(history)
+                .environmentObject(taskArchive)
                 .preferredColorScheme(.dark)
         }
     }

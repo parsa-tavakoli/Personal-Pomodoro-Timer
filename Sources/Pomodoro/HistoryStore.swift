@@ -37,6 +37,15 @@ final class HistoryStore: ObservableObject {
         save()
     }
 
+    /// Deletes every session whose name is the task `key` (see `Stats.key(for:)`). Returns how many.
+    @discardableResult
+    func deleteSessions(taskKey key: String) -> Int {
+        let before = records.count
+        records.removeAll { Stats.key(for: $0.name) == key }
+        save()
+        return before - records.count
+    }
+
     func setProject(_ id: UUID, to projectID: UUID?) {
         guard let i = records.firstIndex(where: { $0.id == id }) else { return }
         records[i].projectID = projectID

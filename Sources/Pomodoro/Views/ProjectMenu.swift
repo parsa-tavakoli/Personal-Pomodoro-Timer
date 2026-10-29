@@ -34,14 +34,17 @@ struct ProjectMenuItems: View {
         } label: {
             Text(selection == nil ? "✓  No project" : "No project")
         }
-        if !projects.projects.isEmpty {
+        // Active projects, plus the selected one if it has since been archived.
+        let shown = projects.projects.filter { !$0.archived || $0.id == selection }
+        if !shown.isEmpty {
             Divider()
-            ForEach(projects.projects) { project in
+            ForEach(shown) { project in
                 Button {
                     selection = project.id
                 } label: {
                     Label {
-                        Text(selection == project.id ? "\(project.name)  ✓" : project.name)
+                        let name = project.archived ? "\(project.name) (archived)" : project.name
+                        Text(selection == project.id ? "\(name)  ✓" : name)
                     } icon: {
                         Image(nsImage: Project.dot(project.color))
                     }
