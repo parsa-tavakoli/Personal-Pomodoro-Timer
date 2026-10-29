@@ -1,13 +1,44 @@
 import Charts
 import SwiftUI
 
+/// The day shown by Stats' Day range. Not saved, so Day always opens on today.
+/// An ObservableObject held by @StateObject (no SwiftUI macro plugin for @State).
+final class StatsDaySelection: ObservableObject {
+    @Published private(set) var day = Calendar.current.startOfDay(for: Date())
+
+    var isToday: Bool { Calendar.current.isDateInToday(day) }
+
+    func move(by days: Int) {
+        guard let next = Calendar.current.date(byAdding: .day, value: days, to: day),
+              next <= Calendar.current.startOfDay(for: Date()) else { return }
+        day = next
+    }
+
+    func goToToday() { day = Calendar.current.startOfDay(for: Date()) }
+
+    /// "Today", "Yesterday" or e.g. "Wed 22 Oct".
+    var label: String {
+        let cal = Calendar.current
+        if cal.isDateInToday(day) { return "Today" }
+        if cal.isDateInYesterday(day) { return "Yesterday" }
+        return day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+    }
+}
+
 /// Weekly stats (design spec, screen D). Content is flat; only the range toggle is glass.
 struct StatsView: View {
     enum Range: Int, CaseIterable {
+        case day = 1
         case week = 7
         case month = 30
 
-        var title: String { self == .week ? "Week" : "Month" }
+        var title: String {
+            switch self {
+            case .day: return "Day"
+            case .week: return "Week"
+            case .month: return "Month"
+            }
+        }
     }
 
     /// Daily pomodoro goal shown on the chart. Fixed for now.
@@ -21,6 +52,7 @@ struct StatsView: View {
     @AppStorage("statsName") private var selectedKey = ""
     /// Selected project: a project ID, "none" for sessions without one, or "" for all.
     @AppStorage("statsProject") private var selectedProject = ""
+    @StateObject private var dayPick = StatsDaySelection()
 
     /// Bars and cells use the selected project's colour; otherwise the focus accent.
     private var barColor: Color {
@@ -28,15 +60,23 @@ struct StatsView: View {
     }
 
     var body: some View {
-        // Week = this calendar week, Monday first; Month = the last 30 days.
-        let days = range == .week ? Stats.currentWeek() : Stats.days(range.rawValue)
+        // Day = one chosen day; Week = this calendar week, Monday first; Month = the last 30 days.
+        let days: [Date] = switch range {
+        case .day: [dayPick.day]
+        case .week: Stats.currentWeek()
+        case .month: Stats.days(range.rawValue)
+        }
         let since = days.first ?? Date()
-        let projectTotals = Stats.byProject(history.records, since: since, projects: projects.projects)
+        // Week and Month run up to now; a past day also needs an end, so narrow to it first.
+        let base = range == .day
+            ? history.records.filter { Calendar.current.isDate($0.startedAt, inSameDayAs: dayPick.day) }
+            : history.records
+        let projectTotals = Stats.byProject(base, since: since, projects: projects.projects)
         // Ignore a remembered project or name that has no sessions in this range.
         let activeProject = projectTotals.first { $0.key == selectedProject }
         // A selected project narrows every number on the page; a selected task narrows further.
-        let scoped = activeProject == nil ? history.records
-            : history.records.filter { Stats.projectKey($0, in: projects.projects) == activeProject!.key }
+        let scoped = activeProject == nil ? base
+            : base.filter { Stats.projectKey($0, in: projects.projects) == activeProject!.key }
         let names = Stats.byName(scoped, since: since)
         let active = names.first { $0.key == selectedKey }
         let records = Stats.records(scoped, since: since, nameKey: active?.key)
@@ -56,8 +96,15 @@ struct StatsView: View {
                 .tint(Theme.Palette.inactive)
             }
 
+            if range == .day {
+                PeriodNavigator(label: dayPick.label, isCurrent: dayPick.isToday, unit: "day",
+                                onBack: { dayPick.move(by: -1) },
+                                onForward: { dayPick.move(by: 1) },
+                                onToday: { dayPick.goToToday() })
+            }
+
             if names.isEmpty {
-                Text(range == .week ? "No sessions this week" : "No sessions in the last 30 days")
+                Text(emptyMessage)
                     .font(Theme.Fonts.body(13))
                     .foregroundStyle(Theme.Palette.textMuted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -68,8 +115,11 @@ struct StatsView: View {
                         if activeProject != nil || active != nil {
                             filterBanner(project: activeProject, task: active)
                         }
-                        card("Pomodoros per day") {
-                            chart(Stats.daily(scoped, days: days, nameKey: active?.key))
+                        // A single bar says nothing, so the per-day chart is left out of Day view.
+                        if range != .day {
+                            card("Pomodoros per day") {
+                                chart(Stats.daily(scoped, days: days, nameKey: active?.key))
+                            }
                         }
                         card("Most focused hours") {
                             hoursRow(Stats.focusByHour(scoped, since: since,
@@ -87,6 +137,14 @@ struct StatsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var emptyMessage: String {
+        switch range {
+        case .day: return dayPick.isToday ? "No sessions today" : "No sessions on this day"
+        case .week: return "No sessions this week"
+        case .month: return "No sessions in the last 30 days"
+        }
     }
 
     // MARK: - KPI tiles

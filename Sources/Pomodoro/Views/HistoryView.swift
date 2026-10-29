@@ -157,25 +157,11 @@ private struct WeekNavigator: View {
     @ObservedObject var selection: HistorySelection
 
     var body: some View {
-        HStack(spacing: Theme.Space.s) {
-            arrow("chevron.left", label: "Previous week") { selection.moveWeek(by: -1) }
-            Spacer(minLength: 0)
-            Text(selection.isCurrentWeek ? "This week" : rangeText)
-                .font(Theme.Fonts.body(13, .medium))
-                .foregroundStyle(Theme.Palette.textMuted)
-            if !selection.isCurrentWeek {
-                Button("Today") { selection.goToToday() }
-                    .buttonStyle(.plain)
-                    .font(Theme.Fonts.body(12, .semibold))
-                    .foregroundStyle(Theme.Palette.accent)
-                    .padding(.leading, 4)
-            }
-            Spacer(minLength: 0)
-            arrow("chevron.right", label: "Next week") { selection.moveWeek(by: 1) }
-                .disabled(selection.isCurrentWeek)
-                .opacity(selection.isCurrentWeek ? 0.3 : 1)
-        }
-        .frame(height: 24)
+        PeriodNavigator(label: selection.isCurrentWeek ? "This week" : rangeText,
+                        isCurrent: selection.isCurrentWeek, unit: "week",
+                        onBack: { selection.moveWeek(by: -1) },
+                        onForward: { selection.moveWeek(by: 1) },
+                        onToday: { selection.goToToday() })
     }
 
     /// "20–26 Oct 2026", or "27 Oct – 2 Nov 2026" across months.
@@ -187,19 +173,6 @@ private struct WeekNavigator: View {
             return "\(first.formatted(.dateTime.day()))–\(end)"
         }
         return "\(first.formatted(.dateTime.day().month(.abbreviated))) – \(end)"
-    }
-
-    private func arrow(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.Palette.textPrimary)
-                .frame(width: 28, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-        .help(label)
     }
 }
 
