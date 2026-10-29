@@ -8,16 +8,21 @@ A calm focus timer for your Mac. Work in pomodoros, take breaks, and see where y
 
 - **Two kinds of session:** a *fixed* number of pomodoros with automatic breaks, or a *flexible* session that grows one pomodoro at a time.
 - **Overtime:** in flexible mode, a finished timer keeps counting (+00:42…) until you choose a short break, a long break, or to stop.
-- **Name what you're working on:** your stats are grouped by these names.
+- **Name what you're working on:** your stats are grouped by these names (your *tasks*).
+- **Projects:** group sessions into projects such as "Thesis" or "Work", each in one of 10 colours. Pick one from the dot in "What are you working on?". The colours appear in the timeline, the session list and Stats.
+- **Archive or delete:** in **Settings → Projects & Tasks**, or by right-clicking a row in Stats.
+  - Archiving hides a project or task but keeps its history.
+  - Deleting a project keeps its sessions (as "No project").
+  - Deleting a task removes its sessions.
 - **History:**
-  - a week strip;
-  - a **day timeline** showing every focus block and break, hour by hour;
-  - a list of the day's sessions, where you can rename them.
-- **Stats:**
+  - a week strip, with **‹ ›** to browse older weeks;
+  - a **day timeline** showing your focus blocks hour by hour, with breaks as gaps;
+  - a list of the day's sessions, where you can rename them or change their project.
+- **Stats** for a **Day** (with ‹ › to go back through earlier days), the **Week** (Monday to Sunday) or the last 30 days:
   - focus time, sessions and your streak;
-  - pomodoros per day, Monday to Sunday, with a daily goal line;
+  - pomodoros per day, with a daily goal line (Week and Month);
   - your most focused hours, across all 24 hours;
-  - time per task.
+  - time per project and per task. Click one to filter the whole page.
 - **Menu bar timer:** just the time, always visible at the top of your screen.
 - **Notifications** when a timer finishes. Only the latest one is kept, so they don't pile up.
 - **Update notice:** Pomodoro tells you when a new version is out.
@@ -61,7 +66,7 @@ When a new version is out, Pomodoro shows **"Version … is available · Downloa
 3. Drag Pomodoro onto Applications and choose **Replace**.
 4. Open it. As with the first install, macOS asks once more, so use **Open Anyway** again.
 
-Your history and settings aren't stored inside the app, so they carry over to the new version.
+Your history, projects and settings aren't stored inside the app, so they carry over to the new version.
 
 *Versions before 1.0.4 don't have the update notice. If you're on one of those, download the latest version once by hand.*
 
@@ -71,7 +76,7 @@ Everything stays on your Mac. The only time Pomodoro goes online is to check thi
 
 ## Uninstall
 
-Drag **Pomodoro** from Applications to the Trash. To also delete your history, remove the folder `~/Library/Application Support/Pomodoro` (in Finder: **Go → Go to Folder…** and paste that path).
+Drag **Pomodoro** from Applications to the Trash. To also delete your history and projects, remove the folder `~/Library/Application Support/Pomodoro` (in Finder: **Go → Go to Folder…** and paste that path).
 
 ---
 
@@ -90,8 +95,10 @@ open Pomodoro.app
 The version number comes from the latest git tag (for example `v1.0.4` gives `1.0.4`). To override it, use `VERSION=1.2.0 ./scripts/bundle.sh`. App icon: `swift scripts/make_icon.swift --full-bleed Resources/logo.png Resources/AppIcon.icns`.
 
 The code lives in `Sources/Pomodoro`:
-- `SessionTimer.swift`: the timer engine and block log;
+- `SessionTimer.swift`: the timer engine and focus-block log;
+- `HistoryStore.swift` / `ProjectStore.swift`: saved sessions, projects and archived tasks;
 - `Stats.swift`: the numbers behind the Stats page;
+- `ArchiveActions.swift`: the confirmed delete actions;
 - `UpdateChecker.swift`: the release check;
 - `Theme.swift`: colours, fonts and spacing;
 - `Views/`: the screens.
@@ -101,8 +108,8 @@ The code lives in `Sources/Pomodoro`:
 Push a version tag. GitHub Actions ([release.yml](.github/workflows/release.yml)) builds the `.dmg` and publishes a GitHub Release with it:
 
 ```bash
-git tag v1.0.5
-git push origin v1.0.5
+git tag v1.0.7
+git push origin v1.0.7
 ```
 
 Everyone on 1.0.4 or later then sees the update notice within a day.
